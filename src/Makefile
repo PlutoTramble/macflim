@@ -2,8 +2,8 @@
 # -Wsign-compare -Wchar-subscripts -Wunused-but-set-variable -Wunused-variable 
 
 # -Werror 
-CXXFLAGS += -Wall -Werror -Wno-deprecated-declarations -Wextra -I/opt/homebrew/include/ ${MORE}
-LDLIBS += -L/opt/homebrew/lib/
+CXXFLAGS += -Wall -Werror -Wno-deprecated-declarations -Wextra -I/usr/include/ffmpeg/ ${MORE}
+LDLIBS += -L/usr/lib/ffmpeg/ -fsanitize=undefined
 
 all: ../flimmaker ../flimutil
 
@@ -54,3 +54,4 @@ video_test: video_test.c
 
 
 #../flimmaker --input '/media/fred/Movies/Movies/Collections/Star Wars (1977-2019)/Star Wars - Episode V - The Empire Strikes Back (1980) [88]/Star Wars - Episode V - The Empire Strikes Back (1980) [720p,x264].mp4' --from 1:59:17.36 --duration 3.46 --bars false --group false --byterate 100000
+#./flimmaker --input cam.mp4 --profile se30 --mp4 c.mp4

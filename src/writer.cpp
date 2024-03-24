@@ -38,7 +38,7 @@ AVCodecContext* video_context = nullptr;
 AVCodecContext* audio_context = nullptr;
 int frameCounter = 0;
 AVFormatContext* ofctx = nullptr;
-AVOutputFormat* oformat = nullptr;
+const AVOutputFormat* oformat = nullptr;
 
     //  Small state for audio encoding (22100 in 370 u8 sample to 44200 in 1024 flt samples)
 float audio_44[735];
@@ -167,28 +167,11 @@ void pushFrame( const image &img, const sound_frame_t &snd )
     frameCounter++;
 }
 
-static AVCodec *dump_codecs()
-{
-    void *i = 0;
-    const AVCodec *p;
-  
-    while ((p = av_codec_iterate(&i)))
-    {
-        if (p->encode2 /* || p->send_frame */)
-            std::clog << p->name << " ";
-    }
-
-    std::clog << "\n";
-
-    return NULL;
- }
-
 public:
-    ffmpeg_writer( const std::string filename, size_t W, size_t H )
+    ffmpeg_writer( std::string filename, size_t W, size_t H )
     {
         W_ = W;
         H_ = H;
-    av_register_all();
 
     oformat = av_guess_format(nullptr, filename.c_str(), nullptr);
     if (!oformat)
@@ -202,7 +185,7 @@ public:
         throw "can't create output context";
     }
 
-    AVCodec* video_codec = nullptr;
+    const AVCodec* video_codec = nullptr;
     video_codec = avcodec_find_encoder(oformat->video_codec);
     if (!video_codec)
     {

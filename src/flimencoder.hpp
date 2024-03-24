@@ -440,16 +440,16 @@ public:
             i++;
         }
 
-        assert( images_.size()>0 );
+        //assert( !images_.empty() );
 
         //  Poster extraction
         image poster_image = images_[0];
         size_t poster_index = poster_ts_*fps_/profile_.fps_ratio();
 
-        if (poster_index>=0 && poster_index<images_.size())
+        if (poster_index<images_.size())
             poster_image = images_[poster_index];
 
-std::cout << "POSTER INDEX: " << poster_index << "\n";
+        std::cout << "POSTER INDEX: " << poster_index << "\n";
 
         auto filters_string = profile_.filters();
         poster_image = filter( poster_image, filters_string.c_str() );

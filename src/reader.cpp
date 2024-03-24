@@ -85,8 +85,8 @@ public:
 class ffmpeg_reader : public input_reader
 {
     AVFormatContext *format_context_ = nullptr;
-    AVCodec *video_decoder_;
-    AVCodec *audio_decoder_;
+    const AVCodec *video_decoder_;
+    const AVCodec *audio_decoder_;
     AVStream *video_stream_;
     AVStream *audio_stream_;
 
@@ -119,18 +119,21 @@ class ffmpeg_reader : public input_reader
 
     bool found_sound_ = false;                   //  To track if sounds starts with an offset
 
-    int decode_packet(int *got_frame, AVPacket &pkt)
+    int decode_packet(AVPacket &pkt)
     {
         int ret = 0;
         int decoded = pkt.size;
-        *got_frame = 0;
 
         if (pkt.stream_index == ixv)
         {
             /* decode video frame */
-            ret = avcodec_decode_video2( video_codec_context_, frame_, got_frame, &pkt );
+            ret = avcodec_send_packet(video_codec_context_, &pkt);
             if (ret < 0) {
-                // fprintf(stderr, "Error decoding video frame (%s)\n", av_err2str(ret));
+                throw "Error sending a packet for decoding";
+            }
+
+            ret = avcodec_receive_frame(video_codec_context_, frame_);
+            if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
                 throw "VIDEO FRAME DECODING ERROR";
             }
 #define noVERBOSE
@@ -138,50 +141,46 @@ class ffmpeg_reader : public input_reader
 #ifdef VERBOSE
     std::clog << "*" << std::flush;
 #endif
-
-            if (*got_frame)
-            {
-                // if (frame->width != width || frame->height != height ||
-                //     frame->format != pix_fmt)
-                //         throw "VIDEO FRAME DEFINITION CHANGED";     //  We could handle that by changing the image
-                /* copy decoded frame to destination buffer:
-                * this is required since rawvideo expects non aligned data */
+            // if (frame->width != width || frame->height != height ||
+            //     frame->format != pix_fmt)
+            //         throw "VIDEO FRAME DEFINITION CHANGED";     //  We could handle that by changing the image
+            /* copy decoded frame to destination buffer:
+            * this is required since rawvideo expects non aligned data */
 #ifdef VERBOSE
     std::clog << "VIDEO FRAME TS = " << frame_->pts*av_q2d(video_stream_->time_base) << "\n";
 #endif
 
-                if (frame_->pts*av_q2d(video_stream_->time_base)>=first_frame_second_ && images_.size()<=video_frame_count)
-                {
+            if (frame_->pts*av_q2d(video_stream_->time_base)>=first_frame_second_ && images_.size()<=video_frame_count)
+            {
 #ifdef VERBOSE
-                    printf("video_frame%s n:%d coded_n:%d presentation_ts:%ld / %f\n",
-                        cached ? "(cached)" : "",
-                        video_frame_count, frame_->coded_picture_number, frame_->pts, frame_->pts*av_q2d(video_stream_->time_base) );
+                printf("video_frame%s n:%d coded_n:%d presentation_ts:%ld / %f\n",
+                    cached ? "(cached)" : "",
+                    video_frame_count, frame_->coded_picture_number, frame_->pts, frame_->pts*av_q2d(video_stream_->time_base) );
 #endif
-                    video_frame_count++;
-                    std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
+                video_frame_count++;
+                std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
 
-                    av_image_copy(
-                        video_dst_data_, video_dst_linesize_,
-                                (const uint8_t **)(frame_->data), frame_->linesize,
-                                video_codec_context_->pix_fmt, video_codec_context_->width, video_codec_context_->height );
+                av_image_copy(
+                    video_dst_data_, video_dst_linesize_,
+                            (const uint8_t **)(frame_->data), frame_->linesize,
+                            video_codec_context_->pix_fmt, video_codec_context_->width, video_codec_context_->height );
 
-                    // copy into image
-                    video_image_->set_luma( video_dst_data_[0] );
+                // copy into image
+                video_image_->set_luma( video_dst_data_[0] );
 
-                    images_.push_back( *default_image_ );
-                    copy( images_.back(), *video_image_ );
+                images_.push_back( *default_image_ );
+                copy( images_.back(), *video_image_ );
 
-                    // write_image( "/tmp/dump.pgm", *video_image_ );
-                }
-#ifdef VERBOSE
-                else
-                    std::clog << "." << std::flush;  //  We are skipping frames
-#endif
-
-                // images_[video_frame_count].set_luma( video_dst_data_[0] );
+                // write_image( "/tmp/dump.pgm", *video_image_ );
             }
-        }
-        else if (pkt.stream_index == ixa)
+#ifdef VERBOSE
+            else
+                std::clog << "." << std::flush;  //  We are skipping frames
+#endif
+
+            // images_[video_frame_count].set_luma( video_dst_data_[0] );
+            }
+        if (pkt.stream_index == ixa)
         {
 #if 0
 std::clog << "avcodec_receive_frame => ";
@@ -200,10 +199,14 @@ std::clog << ret << "\n";
         if (ret == AVERROR(EAGAIN))
             return 0;
 #else
-            ret = avcodec_decode_audio4(audio_codec_context_, frame_, got_frame, &pkt);
+            ret = avcodec_send_packet(audio_codec_context_, &pkt);
             if (ret < 0)
             {
-//                auto s = av_err2str(ret);
+                throw "AUDIO FRAME DECODING ERROR";
+            }
+
+            ret = avcodec_receive_frame(audio_codec_context_, frame_);
+            if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
                 throw "AUDIO FRAME DECODING ERROR";
             }
 #endif
@@ -216,13 +219,11 @@ std::clog << ret << "\n";
 
 //  static int audio_frame_count = 0; 
 
-          if (*got_frame)
-          {
 #ifdef VERBOSE
             std::clog << "AUDIO: " << frame_->pts*av_q2d(audio_stream_->time_base) << " sample count " << frame_->nb_samples << "\n";
 #endif
-            if (frame_->pts*av_q2d(audio_stream_->time_base)>=first_frame_second_)
-            {
+        if (frame_->pts*av_q2d(audio_stream_->time_base)>=first_frame_second_)
+        {
 #ifdef VERBOSE
             std::clog << "USING AUDIO FRAME\n";
 #endif
@@ -238,44 +239,13 @@ std::clog << ret << "\n";
                 }
             }
 
-            //   size_t unpadded_linesize = frame_->nb_samples * av_get_bytes_per_sample((AVSampleFormat)frame_->format);
-            //   printf("audio_frame%s n:%d nb_samples:%d pts:%s\n",
-            //          cached ? "(cached)" : "",
-            //          audio_frame_count++, frame_->nb_samples,
-            //          av_ts2timestr(frame_->pts, &audio_codec_context_->time_base));
-  
-              /* Write the raw audio data samples of the first plane. This works
-               * fine for packed formats (e.g. AV_SAMPLE_FMT_S16). However,
-               * most audio decoders output planar audio, which uses a separate
-               * plane of audio samples for each channel (e.g. AV_SAMPLE_FMT_S16P).
-               * In other words, this code will write only the first audio channel
-               * in these cases.
-               * You should use libswresample or libavfilter to convert the frame
-               * to packed data. */
-            //   fwrite(frame->extended_data[0], 1, unpadded_linesize, audio_dst_file);
-
-// std::clog << frame_->nb_samples << " (" << unpadded_linesize << " bytes) :";
-
-// for (int i=0;i!=frame_->nb_samples;i++)
-// {
-//     float v = 0;
-//     for (int j=0;j!=audio_codec_context_->channels;j++)
-//         v += ((float *)frame_->extended_data[j])[i];
-
-//     std::clog << v/audio_codec_context_->channels << " ";
-// }
-// std::clog << "\n";
-
             sound_->append_samples( (float **)frame_->extended_data, frame_->nb_samples );
-          }
-        //   else
-        //     std::clog << "." << std::flush;
           }
         }
 
         extern bool sDebug;
         if (sDebug)
-            std::clog << "decode_packet returing " << decoded << "\n";
+            std::clog << "decode_packet returning " << decoded << "\n";
 
         return decoded;
     }
@@ -369,7 +339,7 @@ public:
 //      non needed, the decoder was found by av_find_best_stream
 //        dec = avcodec_find_decoder( video_stream_->codecpar->codec_id );
 
-            //  allocate the context
+        //  allocate the context
         video_codec_context_ = avcodec_alloc_context3( video_decoder_ );
         if (!video_codec_context_)
             throw "CANNOT ALLOCATE VIDEO CODEC CONTEXT\n";
@@ -475,20 +445,18 @@ public:
 
         frame_ = av_frame_alloc();
 
-            //  Ready to read images
+        //  Ready to read images
         av_init_packet(&pkt_);
         pkt_.data = NULL;
         pkt_.size = 0;
 
-        int got_frame = 0;
-
         while (av_read_frame(format_context_, &pkt_) >= 0)
         {
             do {
-                auto ret = decode_packet( &got_frame, pkt_ );
+                auto ret = decode_packet(pkt_);
                 if (images_.size()==frame_to_extract_)
                     goto end;
-                if (ret < 0)
+                if (ret <= 0)
                     break;
                 pkt_.data += ret;
                 pkt_.size -= ret;
@@ -499,9 +467,6 @@ public:
         {
             pkt_.data = NULL;
             pkt_.size = 0;
-            do {
-                decode_packet(&got_frame, pkt_);
-            } while (got_frame);
         }
 
 end:
@@ -521,9 +486,9 @@ end:
 
         if (sDebug)
             std::clog << "\n";
-    }
+        }
 
-    ~ffmpeg_reader()
+~ffmpeg_reader()
     {
         avformat_close_input( &format_context_);
         if (sDebug)
