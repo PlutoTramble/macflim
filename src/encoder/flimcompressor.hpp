@@ -1,9 +1,9 @@
 #ifndef FILM_COMPRESSOR_INCLUDED__
 #define FILM_COMPRESSOR_INCLUDED__
 
-#include "image.hpp"
-#include "framebuffer.hpp"
-#include "imgcompress.hpp"
+#include "../image.hpp"
+#include "../framebuffer.hpp"
+#include "../imgcompress.hpp"
 #include "compressor.hpp"
 
 #include <vector>
@@ -12,8 +12,8 @@
 #include <algorithm>
 #include <memory>
 
-#include "reader.hpp"
-#include "subtitles.hpp"
+#include "../reader.hpp"
+#include "../subtitles.hpp"
 
 #define VERBOSE
 

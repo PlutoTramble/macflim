@@ -10,8 +10,8 @@
 #include <bit>
 #include <limits>
 
-#include "framebuffer.hpp"
-#include "ruler.hpp"
+#include "../framebuffer.hpp"
+#include "../ruler.hpp"
 
 inline bool bool_from( const std::string &v )
 {

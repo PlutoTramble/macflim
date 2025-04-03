@@ -37,7 +37,7 @@
 #ifdef LZG
 #include "lzg.h"
 #endif
-#include "flimencoder.hpp"
+#include "encoder/flimencoder.hpp"
 
 using namespace std::string_literals;
 
