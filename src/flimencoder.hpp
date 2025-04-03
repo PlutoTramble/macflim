@@ -8,7 +8,11 @@
 
 #include "reader.hpp"
 #include "writer.hpp"
+
 #include <sstream>
+#include <libavutil/frame.h>
+#include <libavcodec/packet.h>
+#include <libavformat/avformat.h>
 
 extern bool sDebug;
 
@@ -411,6 +415,46 @@ class flimencoder
         }
 
         return res;
+    }
+
+    framegenerator<AVFrame*, AVFrame*, AVPacket*> encode_av_to_av(AVFormatContext* context, int video_stream_index, int audio_stream_index) {
+        using data_packet = std::tuple<AVFrame*, AVFrame*, AVPacket*>;
+
+        AVPacket* pkt = av_packet_alloc();
+        AVFrame* frame = av_frame_alloc();
+        AVPacket* encoded_pkt = av_packet_alloc();
+
+        if (!pkt || !frame || !encoded_pkt) {
+            throw std::runtime_error("Failed to allocate packet or frame");
+        }
+
+        while (av_read_frame(context, pkt) >= 0) {
+            AVFrame* v_frame = nullptr;
+            AVFrame* a_frame = nullptr;
+            AVPacket* e_pkt = nullptr;
+
+            if (pkt->stream_index == video_stream_index) {
+                // Decode video frame
+                // Compress it
+                // Encode it
+            }
+
+            else if (pkt->stream_index == audio_stream_index) {
+                // Decode audio frame
+                // Compress it
+                // Encode it
+            }
+
+            av_packet_unref(pkt);
+
+            if (v_frame || a_frame || e_pkt) {
+                co_yield data_packet{v_frame, a_frame, e_pkt};
+            }
+        }
+
+        av_packet_free(&pkt);
+        av_frame_free(&frame);
+        av_packet_free(&encoded_pkt);
     }
 
 public:
