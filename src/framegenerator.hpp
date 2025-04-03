@@ -5,11 +5,12 @@
 #include <coroutine>
 
 
-template<typename video_frame, typename audio_frame>
+template<typename video_frame, typename audio_frame, typename encoded_object>
 struct framegenerator {
     struct promise_type {
         video_frame v_frame = nullptr;
         audio_frame a_frame = nullptr;
+        encoded_object encoded = nullptr;
 
         framegenerator get_return_object() {
             return framegenerator{std::coroutine_handle<promise_type>::from_promise(*this)};
@@ -20,8 +21,8 @@ struct framegenerator {
 
         void return_void() {}
 
-        std::suspend_always yield_value(std::tuple<video_frame, audio_frame> packet) {
-            std::tie(v_frame, a_frame) = packet;
+        std::suspend_always yield_value(std::tuple<video_frame, audio_frame, encoded_object> packet) {
+            std::tie(v_frame, a_frame, encoded) = packet;
             return {};
         }
 
@@ -47,7 +48,7 @@ struct framegenerator {
     }
 
     std::tuple<video_frame, audio_frame> get_value() {
-        return {handle.promise().v_frame, handle.promise().a_frame};
+        return {handle.promise().v_frame, handle.promise().a_frame, handle.promise().encoded};
     }
 };
 
