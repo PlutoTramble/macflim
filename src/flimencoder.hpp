@@ -4,6 +4,7 @@
 #include <string>
 
 #include "flimcompressor.hpp"
+#include "framegenerator.hpp"
 
 #include "reader.hpp"
 #include "writer.hpp"
