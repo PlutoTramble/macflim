@@ -13,12 +13,6 @@ void ffmpeg_reader::init_reader(const std::string &movie_path, double &from, dou
     if (sDebug) {
         std::clog << "Searching for audio and video in " << format_context_->nb_streams << " streams\n";
     }
-    if (avformat_open_input(&format_context_, movie_path.c_str(), NULL, NULL) != 0) {
-        throw "Cannot open input file";
-    }
-    if (avformat_find_stream_info(format_context_, NULL) < 0) {
-        throw "Cannot find stream information";
-    }
 
     ixv = av_find_best_stream(format_context_, AVMEDIA_TYPE_VIDEO, -1, -1, &video_decoder_, 0);
     ixa = av_find_best_stream(format_context_, AVMEDIA_TYPE_AUDIO, -1, -1, &audio_decoder_, 0);

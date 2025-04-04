@@ -6,6 +6,7 @@
 #include <array>
 #include <iostream>
 #include <algorithm>
+#include <deque>
 
 extern "C" {
     #include <libavformat/avformat.h>
@@ -244,73 +245,13 @@ class ffmpeg_reader : public input_reader {
     size_t video_frame_count = 0;
     std::unique_ptr<image> video_image_;        //  Size of the video input
     std::unique_ptr<image> default_image_;      //  Size of our output
-    std::vector<image> images_;
+    std::deque<image> images_;
     std::unique_ptr<sound_buffer> sound_;
     int image_ix = -1;
     int sound_ix = -1;
     double first_frame_second_;
     size_t frame_to_extract_;
     bool found_sound_ = false;                   //  To track if sounds starts with an offset
-
-    int decode_video_packet(int *got_frame, AVPacket *pkt) {
-        int ret = avcodec_send_packet(video_codec_context_, pkt);
-        if (ret < 0) {
-            if (ret == AVERROR_EOF) {
-                return 0;
-            }
-            char errbuf[AV_ERROR_MAX_STRING_SIZE];
-            av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
-            std::cerr << "Error sending video packet for decoding: " << errbuf << std::endl;
-            return ret;
-        }
-
-        while (ret >= 0) {
-            ret = avcodec_receive_frame(video_codec_context_, frame_);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                break;
-            } else if (ret < 0) {
-                char errbuf[AV_ERROR_MAX_STRING_SIZE];
-                av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
-                std::cerr << "Error during video decoding: " << errbuf << std::endl;
-                return ret;
-            }
-
-            *got_frame = 1;
-
-#ifdef VERBOSE
-            std::clog << "VIDEO FRAME TS = " << frame_->pts * av_q2d(video_stream_->time_base) << "\n";
-#endif
-
-            if (frame_->pts * av_q2d(video_stream_->time_base) >= first_frame_second_ &&
-                images_.size() <= video_frame_count) {
-#ifdef VERBOSE
-                printf("video_frame%s n:%d coded_n:%d presentation_ts:%ld / %f\n",
-                    video_frame_count, frame_->pts,
-                    frame_->pts * av_q2d(video_stream_->time_base));
-#endif
-                video_frame_count++;
-                std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
-
-                av_image_copy(
-                        video_dst_data_, video_dst_linesize_,
-                        (const uint8_t **)(frame_->data), frame_->linesize,
-                        video_codec_context_->pix_fmt, video_codec_context_->width,
-                        video_codec_context_->height);
-
-                video_image_->set_luma(video_dst_data_[0]);
-
-                images_.push_back(*default_image_);
-                copy(images_.back(), *video_image_);
-            }
-#ifdef VERBOSE
-            else {
-                std::clog << "." << std::flush;  //  We are skipping frames
-            }
-#endif
-        }
-
-        return 0;
-    }
 
     int decode_audio_packet(int *got_frame, AVPacket *pkt) {
         int ret = avcodec_send_packet(audio_codec_context_, pkt);
@@ -337,15 +278,15 @@ class ffmpeg_reader : public input_reader {
 
             *got_frame = 1;
 
-#ifdef VERBOSE
+            #ifdef VERBOSE
             std::clog << "AUDIO: " << frame_->pts * av_q2d(audio_stream_->time_base)
                       << " sample count " << frame_->nb_samples << "\n";
-#endif
+            #endif
 
             if (frame_->pts * av_q2d(audio_stream_->time_base) >= first_frame_second_) {
-#ifdef VERBOSE
+            #ifdef VERBOSE
                 std::clog << "USING AUDIO FRAME\n";
-#endif
+            #endif
 
                 if (!found_sound_) {
                     found_sound_ = true;
@@ -361,19 +302,6 @@ class ffmpeg_reader : public input_reader {
         }
 
         return 0;
-    }
-
-    int decode_packet(int *got_frame, AVPacket *pkt) {
-        int decoded = pkt->size;
-        *got_frame = 0;
-
-        if (pkt->stream_index == ixv) {
-            decode_video_packet(got_frame, pkt);
-        } else if (pkt->stream_index == ixa) {
-            decode_audio_packet(got_frame, pkt);
-        }
-
-        return decoded;
     }
 
     void init_video_context();
@@ -414,53 +342,54 @@ class ffmpeg_reader : public input_reader {
             std::clog << bufsize << "\n";
         }
 
-        frame_ = av_frame_alloc();
-
-        pkt_ = av_packet_alloc();
-        if (!pkt_) {
-            throw "Failed to allocate packet";
-        }
-
-        int got_frame = 0;
-
-        while (av_read_frame(format_context_, pkt_) >= 0 && images_.size() < frame_to_extract_) {
-            do {
-                auto ret = decode_packet(&got_frame, pkt_);
-                if (ret < 0) {
-                    break;
-                }
-                pkt_->data += ret;
-                pkt_->size -= ret;
-            } while (pkt_->size > 0);
-            av_packet_unref(pkt_);
-        }
-
-        /* flush cached frames */
-        if (images_.size() != frame_to_extract_) {
-            pkt_->data = NULL;
-            pkt_->size = 0;
-            do {
-                decode_packet(&got_frame, pkt_);
-            } while (got_frame);
-        }
-
-        std::clog << "\n";
-
-        image_ix = 0;
-
-        if (sDebug) {
-            std::clog << "\nAcquired " << images_.size() << " frames of video for a total of "
-                      << images_.size() / av_q2d(video_stream_->r_frame_rate) << " seconds \n";
-        }
-
-        if (ixa != AVERROR_STREAM_NOT_FOUND) {
-            sound_->process();
-            sound_ix = 0;
-        }
-
-        if (sDebug) {
-            std::clog << "\n";
-        }
+        // TODO : To delete -- old implementation
+//        frame_ = av_frame_alloc();
+//
+//        pkt_ = av_packet_alloc();
+//        if (!pkt_) {
+//            throw "Failed to allocate packet";
+//        }
+//
+//        int got_frame = 0;
+//
+//        while (av_read_frame(format_context_, pkt_) >= 0 && images_.size() < frame_to_extract_) {
+//            do {
+//                auto ret = decode_packet(&got_frame, pkt_);
+//                if (ret < 0) {
+//                    break;
+//                }
+//                pkt_->data += ret;
+//                pkt_->size -= ret;
+//            } while (pkt_->size > 0);
+//            av_packet_unref(pkt_);
+//        }
+//
+//        /* flush cached frames */
+//        if (images_.size() != frame_to_extract_) {
+//            pkt_->data = NULL;
+//            pkt_->size = 0;
+//            do {
+//                decode_packet(&got_frame, pkt_);
+//            } while (got_frame);
+//        }
+//
+//        std::clog << "\n";
+//
+//        image_ix = 0;
+//
+//        if (sDebug) {
+//            std::clog << "\nAcquired " << images_.size() << " frames of video for a total of "
+//                      << images_.size() / av_q2d(video_stream_->r_frame_rate) << " seconds \n";
+//        }
+//
+//        if (ixa != AVERROR_STREAM_NOT_FOUND) {
+//            sound_->process();
+//            sound_ix = 0;
+//        }
+//
+//        if (sDebug) {
+//            std::clog << "\n";
+//        }
     }
 
 public:
@@ -496,6 +425,42 @@ public:
 
     int get_video_frame_index() const {return ixv;}
     int get_audio_frame_index() const {return ixa;}
+
+    image* decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clonedFrame) {
+        image* decodedImagePtr = nullptr;
+
+        if (avcodec_send_packet(video_codec_context_, pkt) == 0 && avcodec_receive_frame(video_codec_context_, frame) == 0) {
+            clonedFrame = av_frame_clone(frame);
+            if (clonedFrame->pts * av_q2d(video_stream_->time_base) >= first_frame_second_) { //&& images_.size() <= video_frame_count) {
+                #ifdef VERBOSE
+                printf("video_frame%s n:%d coded_n:%d presentation_ts:%ld / %f\n",
+                    video_frame_count, frame_->pts,
+                    frame_->pts * av_q2d(video_stream_->time_base));
+                #endif
+                video_frame_count++;
+                std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
+
+                av_image_copy(
+                        video_dst_data_, video_dst_linesize_,
+                        (const uint8_t **)(clonedFrame->data), clonedFrame->linesize,
+                        video_codec_context_->pix_fmt, video_codec_context_->width,
+                        video_codec_context_->height);
+
+                video_image_->set_luma(video_dst_data_[0]);
+
+                images_.push_back(*default_image_);
+                copy(images_.back(), *video_image_);
+                decodedImagePtr = new image(images_.front());
+                images_.pop_front();
+            }
+            #ifdef VERBOSE
+            else {
+                std::clog << "." << std::flush;  //  We are skipping frames
+            }
+            #endif
+        }
+        return decodedImagePtr;
+    }
 
     virtual double frame_rate() {
         return av_q2d(video_stream_->r_frame_rate);

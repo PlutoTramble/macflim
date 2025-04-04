@@ -420,7 +420,7 @@ class flimencoder
 
     framegenerator<AVFrame*, AVFrame*, AVPacket*> av_to_av_encoder() {
         using data_packet = std::tuple<AVFrame*, AVFrame*, AVPacket*>;
-        ffmpeg_reader* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
+        auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
 
         AVPacket* pkt = av_packet_alloc();
         AVFrame* frame = av_frame_alloc();
@@ -438,15 +438,18 @@ class flimencoder
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
 
+            image* decodedFrame = nullptr;
+
             if (pkt->stream_index == video_stream_index) {
                 // Decode video frame
+                decodedFrame = f_reader->decode_video(frame, pkt, v_frame);
+
+
                 // Compress it
                 // Encode it
-
-                av_frame_free(&v_frame);
             }
-
             else if (pkt->stream_index == audio_stream_index) {
+                a_frame = av_frame_clone(frame);
                 // Decode audio frame
                 // Compress it
                 // Encode it
@@ -459,11 +462,30 @@ class flimencoder
             if (v_frame || a_frame || e_pkt) {
                 co_yield data_packet{v_frame, a_frame, e_pkt};
             }
+
+            delete decodedFrame;
         }
 
         av_packet_free(&pkt);
         av_frame_free(&frame);
         av_packet_free(&encoded_pkt);
+
+    }
+
+    void encode_av_to_av() {
+        auto encoder = av_to_av_encoder();
+
+        while(encoder.next()) {
+            auto [v_frame, a_frame, encoded] = encoder.get_value();
+
+            if(v_frame) {
+                av_frame_free(&v_frame);
+            }
+            if(a_frame)
+                av_frame_free(&a_frame);
+            if(encoded)
+                av_packet_free(&encoded);
+        }
     }
 
 public:
@@ -482,14 +504,15 @@ public:
     void set_subtitles( const std::vector<subtitle> &subtitles ) { subtitles_ = subtitles; /* yes, it is a copy */ }
 
     //  Encode all the frames
-    void make_flim( const std::string flim_pathname, input_reader *reader, const std::vector<std::unique_ptr<output_writer>> &writers )
+    void make_flim( const std::string flim_pathname, input_reader *r, const std::vector<std::unique_ptr<output_writer>> &writers )
     {  
         assert(r);
 
         reader = r;
 
+        encode_av_to_av();
 
-
+        return; // tmp
 
         int i = 0;
         while (auto next = r->next())
