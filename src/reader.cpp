@@ -363,23 +363,14 @@ class ffmpeg_reader : public input_reader {
         frame_to_extract_ = duration * av_q2d(video_stream_->r_frame_rate);
     }
 
-public:
-    ffmpeg_reader() {}
-
-    ffmpeg_reader(const std::string &movie_path, double from, double duration) {
-
-        init_reader(movie_path, from, duration);
-
-        init_video_context();
-        init_audio_context();
-
+    void read() {
         auto bufsize = av_image_alloc(
-            video_dst_data_,
-            video_dst_linesize_,
-            video_codec_context_->width,
-            video_codec_context_->height,
-            video_codec_context_->pix_fmt,
-            1);
+                video_dst_data_,
+                video_dst_linesize_,
+                video_codec_context_->width,
+                video_codec_context_->height,
+                video_codec_context_->pix_fmt,
+                1);
 
         if (bufsize < 0) {
             throw "CANNOT ALLOCATE IMAGE";
@@ -398,9 +389,9 @@ public:
             std::clog << "Image structure:\n";
             std::clog << video_dst_linesize_[0] << " " << video_dst_linesize_[1] << " "
                       << video_dst_linesize_[2] << " " << video_dst_linesize_[3] << "\n";
-            std::clog << (video_dst_linesize_[0] + video_dst_linesize_[1] + 
-                          video_dst_linesize_[2] + video_dst_linesize_[3]) * 
-                          video_codec_context_->height << "\n";
+            std::clog << (video_dst_linesize_[0] + video_dst_linesize_[1] +
+                          video_dst_linesize_[2] + video_dst_linesize_[3]) *
+                         video_codec_context_->height << "\n";
             std::clog << bufsize << "\n";
         }
 
@@ -451,6 +442,19 @@ public:
         if (sDebug) {
             std::clog << "\n";
         }
+    }
+
+public:
+    ffmpeg_reader() {}
+
+    ffmpeg_reader(const std::string &movie_path, double from, double duration) {
+
+        init_reader(movie_path, from, duration);
+
+        init_video_context();
+        init_audio_context();
+
+        //read();
     }
 
     ~ffmpeg_reader() {
