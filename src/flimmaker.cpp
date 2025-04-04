@@ -527,7 +527,7 @@ int main(int argc, char **argv) {
             std::clog << "( use --fps and --audio to change fps and audio )\n";
             r = std::make_unique<filesystem_reader>(input_file, fps, audio_arg, from_index, to_index);
         } else {
-            r = make_ffmpeg_reader(input_file, from_index, duration);
+            r = std::make_unique<ffmpeg_reader>(input_file, from_index, duration);
             fps = r->frame_rate();
         }
 
