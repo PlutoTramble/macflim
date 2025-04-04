@@ -290,22 +290,22 @@ class ffmpeg_reader : public input_reader {
         }
     }
 
-public:
-    ffmpeg_reader() {}
-
-    ffmpeg_reader(const std::string &movie_path, double from, double duration) {
+    void init_reader(const std::string &movie_path, double &from, double &duration) {
         av_log_set_level(AV_LOG_WARNING);
-
         if (avformat_open_input(&format_context_, movie_path.c_str(), NULL, NULL) != 0) {
             throw "Cannot open input file";
         }
-
         if (avformat_find_stream_info(format_context_, NULL) < 0) {
             throw "Cannot find stream information";
         }
-
         if (sDebug) {
             std::clog << "Searching for audio and video in " << format_context_->nb_streams << " streams\n";
+        }
+        if (avformat_open_input(&format_context_, movie_path.c_str(), NULL, NULL) != 0) {
+            throw "Cannot open input file";
+        }
+        if (avformat_find_stream_info(format_context_, NULL) < 0) {
+            throw "Cannot find stream information";
         }
 
         ixv = av_find_best_stream(format_context_, AVMEDIA_TYPE_VIDEO, -1, -1, &video_decoder_, 0);
@@ -329,16 +329,17 @@ public:
             std::clog << "Audio stream index :" << ixa << "\n";
         }
 
+        // TODO : May be removed -- maybe no longer needed?
         double actual_duration = format_context_->duration / (double)AV_TIME_BASE;
         if (duration > actual_duration) {
-            std::clog << "Warning: Requested duration (" << duration << "s) exceeds video length (" 
+            std::clog << "Warning: Requested duration (" << duration << "s) exceeds video length ("
                       << actual_duration << "s). Trimming to video length.\n";
             duration = actual_duration;
         }
 
         double seek_to = std::max(from - 10.0, 0.0);    //  We seek to 10 seconds earlier, if we can
-        if (avformat_seek_file(format_context_, -1, seek_to * AV_TIME_BASE, 
-                               seek_to * AV_TIME_BASE, seek_to * AV_TIME_BASE, 
+        if (avformat_seek_file(format_context_, -1, seek_to * AV_TIME_BASE,
+                               seek_to * AV_TIME_BASE, seek_to * AV_TIME_BASE,
                                AVSEEK_FLAG_ANY) < 0) {
             throw "CANNOT SEEK IN FILE";
         }
@@ -357,7 +358,17 @@ public:
         }
 
         first_frame_second_ = from;
+
+        // TODO : May be removed -- maybe no longer needed?
         frame_to_extract_ = duration * av_q2d(video_stream_->r_frame_rate);
+    }
+
+public:
+    ffmpeg_reader() {}
+
+    ffmpeg_reader(const std::string &movie_path, double from, double duration) {
+
+        init_reader(movie_path, from, duration);
 
         init_video_context();
         init_audio_context();
