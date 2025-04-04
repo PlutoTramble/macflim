@@ -47,7 +47,7 @@ struct framegenerator {
         return false;
     }
 
-    std::tuple<video_frame, audio_frame> get_value() {
+    std::tuple<video_frame, audio_frame, encoded_object> get_value() {
         return {handle.promise().v_frame, handle.promise().a_frame, handle.promise().encoded};
     }
 };
