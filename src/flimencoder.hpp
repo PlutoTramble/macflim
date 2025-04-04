@@ -310,6 +310,7 @@ public:
 class flimencoder
 {
     const encoding_profile &profile_;
+    input_reader* reader = nullptr;
 
     std::string out_pattern_ = "out-%06d.pgm"s;
     std::string change_pattern_ = "change-%06d.pgm"s;
@@ -417,18 +418,22 @@ class flimencoder
         return res;
     }
 
-    framegenerator<AVFrame*, AVFrame*, AVPacket*> encode_av_to_av(AVFormatContext* context, int video_stream_index, int audio_stream_index) {
+    framegenerator<AVFrame*, AVFrame*, AVPacket*> av_to_av_encoder() {
         using data_packet = std::tuple<AVFrame*, AVFrame*, AVPacket*>;
+        ffmpeg_reader* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
 
         AVPacket* pkt = av_packet_alloc();
         AVFrame* frame = av_frame_alloc();
         AVPacket* encoded_pkt = av_packet_alloc();
 
+        int video_stream_index = f_reader->get_video_frame_index();
+        int audio_stream_index = f_reader->get_audio_frame_index();
+
         if (!pkt || !frame || !encoded_pkt) {
             throw std::runtime_error("Failed to allocate packet or frame");
         }
 
-        while (av_read_frame(context, pkt) >= 0) {
+        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0) {
             AVFrame* v_frame = nullptr;
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
@@ -437,12 +442,16 @@ class flimencoder
                 // Decode video frame
                 // Compress it
                 // Encode it
+
+                av_frame_free(&v_frame);
             }
 
             else if (pkt->stream_index == audio_stream_index) {
                 // Decode audio frame
                 // Compress it
                 // Encode it
+
+                av_frame_free(&a_frame);
             }
 
             av_packet_unref(pkt);
@@ -475,10 +484,15 @@ public:
     //  Encode all the frames
     void make_flim( const std::string flim_pathname, input_reader *reader, const std::vector<std::unique_ptr<output_writer>> &writers )
     {  
-        assert( reader );
+        assert(r);
+
+        reader = r;
+
+
+
 
         int i = 0;
-        while (auto next = reader->next())
+        while (auto next = r->next())
         {
             if ((i%profile_.fps_ratio())==0)
                 images_.push_back( *next );
@@ -522,12 +536,12 @@ std::cout << "POSTER INDEX: " << poster_index << "\n";
         write_image( "/tmp/poster3.pgm", poster_small_bw );
 
         if (!profile_.silent())
-            while (auto next = reader->next_sound())
+            while (auto next = r->next_sound())
             {
                 audio_samples_.push_back( *next );
             }
 
-        // audio_samples_ = normalize_sound( reader->raw_sound(), images_.size()/fps_*60*370 );
+        // audio_samples_ = normalize_sound( r->raw_sound(), images_.size()/fps_*60*370 );
 
         fix();
 

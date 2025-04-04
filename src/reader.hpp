@@ -490,6 +490,13 @@ public:
         }
     }
 
+    AVFormatContext* get_format_context() const {
+        return this->format_context_;
+    }
+
+    int get_video_frame_index() const {return ixv;}
+    int get_audio_frame_index() const {return ixa;}
+
     virtual double frame_rate() {
         return av_q2d(video_stream_->r_frame_rate);
     }
@@ -508,10 +515,6 @@ public:
             return sound_->extract(sound_ix++);
         }
         return nullptr;
-    }
-
-    AVFormatContext* get_format_context() {
-        return this->format_context_;
     }
 };
 
