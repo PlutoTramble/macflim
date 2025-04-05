@@ -253,56 +253,6 @@ class ffmpeg_reader : public input_reader {
     size_t frame_to_extract_;
     bool found_sound_ = false;                   //  To track if sounds starts with an offset
 
-    int decode_audio_packet(int *got_frame, AVPacket *pkt) {
-        int ret = avcodec_send_packet(audio_codec_context_, pkt);
-        if (ret < 0) {
-            if (ret == AVERROR_EOF) {
-                return 0;
-            }
-            char errbuf[AV_ERROR_MAX_STRING_SIZE];
-            av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
-            std::cerr << "Error sending audio packet for decoding: " << errbuf << std::endl;
-            return ret;
-        }
-
-        while (ret >= 0) {
-            ret = avcodec_receive_frame(audio_codec_context_, frame_);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                break;
-            } else if (ret < 0) {
-                char errbuf[AV_ERROR_MAX_STRING_SIZE];
-                av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
-                std::cerr << "Error during audio decoding: " << errbuf << std::endl;
-                return ret;
-            }
-
-            *got_frame = 1;
-
-            #ifdef VERBOSE
-            std::clog << "AUDIO: " << frame_->pts * av_q2d(audio_stream_->time_base)
-                      << " sample count " << frame_->nb_samples << "\n";
-            #endif
-
-            if (frame_->pts * av_q2d(audio_stream_->time_base) >= first_frame_second_) {
-            #ifdef VERBOSE
-                std::clog << "USING AUDIO FRAME\n";
-            #endif
-
-                if (!found_sound_) {
-                    found_sound_ = true;
-                    auto skip = frame_->pts * av_q2d(audio_stream_->time_base) - first_frame_second_;
-                    if (skip > 0) {
-                        std::clog << "Inserting " << skip << " seconds of silence\n";
-                        sound_->append_silence(skip);
-                    }
-                }
-
-                sound_->append_samples((float **)frame_->extended_data, frame_->nb_samples);
-            }
-        }
-
-        return 0;
-    }
 
     void init_video_context();
 
@@ -426,7 +376,8 @@ public:
     int get_video_frame_index() const {return ixv;}
     int get_audio_frame_index() const {return ixa;}
 
-    image* decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clonedFrame);
+    image* decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
+    void decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
 
     virtual double frame_rate() {
         return av_q2d(video_stream_->r_frame_rate);

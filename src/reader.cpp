@@ -173,3 +173,31 @@ image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clon
     }
     return decoded_image_ptr;
 }
+
+void ffmpeg_reader::decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame) {
+    if (avcodec_send_packet(audio_codec_context_, pkt) == 0 && avcodec_receive_frame(audio_codec_context_, frame) == 0) {
+        cloned_frame = av_frame_clone(frame);
+
+        #ifdef VERBOSE
+        std::clog << "AUDIO: " << cloned_frame->pts * av_q2d(audio_stream_->time_base)
+                      << " sample count " << cloned_frame->nb_samples << "\n";
+        #endif
+
+        if (cloned_frame->pts * av_q2d(audio_stream_->time_base) >= first_frame_second_) {
+            #ifdef VERBOSE
+            std::clog << "USING AUDIO FRAME\n";
+            #endif
+
+            if (!found_sound_) {
+                found_sound_ = true;
+                auto skip = cloned_frame->pts * av_q2d(audio_stream_->time_base) - first_frame_second_;
+                if (skip > 0) {
+                    std::clog << "Inserting " << skip << " seconds of silence\n";
+                    sound_->append_silence(skip);
+                }
+            }
+
+            sound_->append_samples((float **)cloned_frame->extended_data, cloned_frame->nb_samples);
+        }
+    }
+}

@@ -447,12 +447,11 @@ class flimencoder
                 // Encode it
             }
             else if (pkt->stream_index == audio_stream_index) {
-                a_frame = av_frame_clone(frame);
                 // Decode audio frame
+                // TODO : For the time being, this will only accumulate samples. Once there will be enough, we can make sound frames out of it.
+                f_reader->decode_sound(frame, pkt, a_frame);
                 // Compress it
                 // Encode it
-
-                av_frame_free(&a_frame);
             }
 
             av_packet_unref(pkt);
@@ -467,7 +466,6 @@ class flimencoder
         av_packet_free(&pkt);
         av_frame_free(&frame);
         av_packet_free(&encoded_pkt);
-
     }
 
     void encode_av_to_av() {
