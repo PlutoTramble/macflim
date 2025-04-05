@@ -438,13 +438,11 @@ class flimencoder
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
 
-            image* decodedFrame = nullptr;
+            image* decoded_video = nullptr;
 
             if (pkt->stream_index == video_stream_index) {
                 // Decode video frame
-                decodedFrame = f_reader->decode_video(frame, pkt, v_frame);
-
-
+                decoded_video = f_reader->decode_video(frame, pkt, v_frame);
                 // Compress it
                 // Encode it
             }
@@ -463,7 +461,7 @@ class flimencoder
                 co_yield data_packet{v_frame, a_frame, e_pkt};
             }
 
-            delete decodedFrame;
+            delete decoded_video;
         }
 
         av_packet_free(&pkt);

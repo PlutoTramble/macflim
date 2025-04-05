@@ -138,23 +138,23 @@ void ffmpeg_reader::init_audio_context() {
     }
 }
 
-image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clonedFrame) {
-    image* decodedImagePtr = nullptr;
+image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame) {
+    image* decoded_image_ptr = nullptr;
 
     if (avcodec_send_packet(video_codec_context_, pkt) == 0 && avcodec_receive_frame(video_codec_context_, frame) == 0) {
-        clonedFrame = av_frame_clone(frame);
-        if (clonedFrame->pts * av_q2d(video_stream_->time_base) >= first_frame_second_) { //&& images_.size() <= video_frame_count) {
+        cloned_frame = av_frame_clone(frame);
+        if (cloned_frame->pts * av_q2d(video_stream_->time_base) >= first_frame_second_) { //&& images_.size() <= video_frame_count) {
             #ifdef VERBOSE
             printf("video_frame%s n:%d coded_n:%d presentation_ts:%ld / %f\n",
                     video_frame_count, frame_->pts,
-                    frame_->pts * av_q2d(video_stream_->time_base));
+                    cloned_frame->pts * av_q2d(video_stream_->time_base));
             #endif
             video_frame_count++;
             std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
 
             av_image_copy(
                     video_dst_data_, video_dst_linesize_,
-                    (const uint8_t **)(clonedFrame->data), clonedFrame->linesize,
+                    (const uint8_t **)(cloned_frame->data), cloned_frame->linesize,
                     video_codec_context_->pix_fmt, video_codec_context_->width,
                     video_codec_context_->height);
 
@@ -162,14 +162,14 @@ image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clon
 
             images_.push_back(*default_image_);
             copy(images_.back(), *video_image_);
-            decodedImagePtr = new image(images_.front());
+            decoded_image_ptr = new image(images_.front());
             images_.pop_front();
         }
         #ifdef VERBOSE
         else {
-                std::clog << "." << std::flush;  //  We are skipping frames
-            }
+            std::clog << "." << std::flush;  //  We are skipping frames
+        }
         #endif
     }
-    return decodedImagePtr;
+    return decoded_image_ptr;
 }
