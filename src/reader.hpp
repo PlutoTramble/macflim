@@ -171,11 +171,15 @@ extern bool sDebug;
 
 /// This stores a sound buffer and transform it into a suitable format for flims
 class sound_buffer {
-    std::vector<float> data_;
+    std::deque<float> data_;
     size_t channel_count_ = 0;      //  # of channels
     size_t sample_rate_ = 0;        //  # of samples per second
     float min_sample_;
     float max_sample_;
+
+    size_t sound_frame_size() {
+        return (sound_frame_t::size / 60.0) * sample_rate_;
+    }
 
 public:
     sound_buffer(size_t channel_count, size_t sample_rate) :
@@ -205,26 +209,35 @@ public:
         max_sample_ = *std::max_element(std::begin(data_), std::end(data_));
     }
 
-    std::unique_ptr<sound_frame_t> extract(size_t frame) {
-        double t = frame / 60.0;        //  Time in seconds
-        size_t start = t * sample_rate_;
+    std::unique_ptr<sound_frame_t> extract_front() {
 
-        if (start >= data_.size()) {
+        if (data_.empty()) {
             return nullptr;
         }
 
-        auto fr = std::make_unique<sound_frame_t>();
+        std::unique_ptr<sound_frame_t> s_frame = std::make_unique<sound_frame_t>();
 
         for (int i = 0; i != sound_frame_t::size; i++) {
-            size_t index = start + (i / 370.0 / 60.0) * sample_rate_;
+            size_t index = (i / sound_frame_t::size / 60.0) * sample_rate_;
             if (index < data_.size()) {
-                fr->at(i) = (data_[index] - min_sample_) / (max_sample_ - min_sample_) * 255;
+                // sound data
+                s_frame->at(i) = (data_[index] - min_sample_) / (max_sample_ - min_sample_) * 255;
             } else {
-                fr->at(i) = 128;
+                // silence
+                s_frame->at(i) = 128;
             }
         }
 
-        return fr;
+        const size_t frame_size = sound_frame_size();
+
+        if(frame_size < data_.size()) {
+            data_.erase(data_.begin(), data_.begin() + frame_size);
+        }
+        else {
+            data_.clear();
+        }
+
+        return s_frame;
     }
 };
 
@@ -245,12 +258,13 @@ class ffmpeg_reader : public input_reader {
     size_t video_frame_count = 0;
     std::unique_ptr<image> video_image_;        //  Size of the video input
     std::unique_ptr<image> default_image_;      //  Size of our output
-    std::deque<image> images_;
+    std::deque<image> images_;                  //  Image read buffer
     std::unique_ptr<sound_buffer> sound_;
     int image_ix = -1;
     int sound_ix = -1;
     double first_frame_second_;
-    size_t frame_to_extract_;
+    size_t frames_to_extract_;
+    size_t extracted_frames_;
     bool found_sound_ = false;                   //  To track if sounds starts with an offset
 
 
@@ -302,7 +316,7 @@ class ffmpeg_reader : public input_reader {
 //
 //        int got_frame = 0;
 //
-//        while (av_read_frame(format_context_, pkt_) >= 0 && images_.size() < frame_to_extract_) {
+//        while (av_read_frame(format_context_, pkt_) >= 0 && images_.size() < frames_to_extract_) {
 //            do {
 //                auto ret = decode_packet(&got_frame, pkt_);
 //                if (ret < 0) {
@@ -315,7 +329,7 @@ class ffmpeg_reader : public input_reader {
 //        }
 //
 //        /* flush cached frames */
-//        if (images_.size() != frame_to_extract_) {
+//        if (images_.size() != frames_to_extract_) {
 //            pkt_->data = NULL;
 //            pkt_->size = 0;
 //            do {
@@ -375,6 +389,7 @@ public:
 
     int get_video_frame_index() const {return ixv;}
     int get_audio_frame_index() const {return ixa;}
+    size_t get_frames_to_extract() const {return frames_to_extract_;}
 
     image* decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
     void decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
@@ -394,7 +409,7 @@ public:
 
     virtual std::unique_ptr<sound_frame_t> next_sound() {
         if (ixa != AVERROR_STREAM_NOT_FOUND) {
-            return sound_->extract(sound_ix++);
+            return sound_->extract_front();
         }
         return nullptr;
     }

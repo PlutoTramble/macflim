@@ -64,9 +64,7 @@ void ffmpeg_reader::init_reader(const std::string &movie_path, double &from, dou
     }
 
     first_frame_second_ = from;
-
-    // TODO : May be removed -- maybe no longer needed?
-    frame_to_extract_ = duration * av_q2d(video_stream_->r_frame_rate);
+    frames_to_extract_ = duration * av_q2d(video_stream_->r_frame_rate);
 }
 
 void ffmpeg_reader::init_video_context() {
@@ -161,6 +159,8 @@ image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clon
             video_image_->set_luma(video_dst_data_[0]);
 
             images_.push_back(*default_image_);
+
+            // TODO : Move this somewhere else ;; we let it accumulate in its buffer
             copy(images_.back(), *video_image_);
             decoded_image_ptr = new image(images_.front());
             images_.pop_front();
