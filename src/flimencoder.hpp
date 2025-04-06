@@ -484,8 +484,17 @@ class flimencoder
     void encode_av_to_av() {
         auto encoder = av_to_av_encoder();
 
+        time_t last_log_update = time(nullptr);
+
         while(encoder.next()) {
             auto [v_frame, a_frame, encoded] = encoder.get_value();
+
+            time_t current_time = time(nullptr);
+
+            if(1 < (current_time - last_log_update)) {
+                last_log_update = current_time;
+                log_progress();
+            }
 
             if(v_frame)
                 av_frame_free(&v_frame);
@@ -494,6 +503,11 @@ class flimencoder
             if(encoded)
                 av_packet_free(&encoded);
         }
+    }
+
+    void log_progress() {
+        auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
+        std::clog << "Read " << f_reader->get_read_images() << " frames\r" << std::flush;
     }
 
 public:

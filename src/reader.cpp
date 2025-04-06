@@ -148,7 +148,7 @@ void ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned
                     cloned_frame->pts * av_q2d(video_stream_->time_base));
             #endif
             video_frame_count++;
-            std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
+            //std::clog << "Read " << video_frame_count << " frames\r" << std::flush;
 
             av_image_copy(
                     video_dst_data_, video_dst_linesize_,
