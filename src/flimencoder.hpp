@@ -440,19 +440,17 @@ class flimencoder
             throw std::runtime_error("Failed to allocate packet or frame");
         }
 
-        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0 || f_reader->can_extract_frames()) {
+        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0 || f_reader->can_extract_frames(compressor->get_ticks_until_next_frame())) {
             AVFrame* v_frame = nullptr;
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
 
             if (pkt->stream_index == video_stream_index) {
-                // Decode video frame
                 f_reader->decode_video(frame, pkt, v_frame);
                 // Compress it
                 // Encode it
             }
             else if (pkt->stream_index == audio_stream_index) {
-                // Decode audio frame
                 f_reader->decode_sound(frame, pkt, a_frame);
                 // Compress it
                 // Encode it
@@ -463,9 +461,10 @@ class flimencoder
             // TODO : Check if there is something to compress
             // -- Check into reader buffer:     If image available, and enough data for audio => compress
             //                                  If last image, but not enough data for audio => compress?
-            while(f_reader->can_extract_frames()) {
-                // TODO : If it's the first image we'll need to generate posters and intitialize the compressor.
-            }
+
+            //while(f_reader->can_extract_frames(compressor->get_ticks_until_next_frame())) {
+                // TODO : If it's the first image we'll need to generate posters and initialize the compressor.
+            //}
 
             // TODO : Check if there is something to encode
             // -- Check into compressor buffers:

@@ -213,7 +213,7 @@ public:
         const std::vector<codec_spec> &codecs_;
         const double fps_;      //  Input fps
         const size_t byterate_;
-        const std::vector<sound_frame_t> &audio_;    //  The audio input
+        //const std::vector<sound_frame_t> &audio_;    //  The audio input
         bool group_;
 
 
