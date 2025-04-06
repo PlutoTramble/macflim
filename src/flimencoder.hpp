@@ -324,6 +324,7 @@ class flimencoder
     std::vector<sound_frame_t> audio_samples_;
 
     double fps_ = 24;
+    size_t poster_index_ = 0;
     double poster_ts_ = 0;
 
     std::string comment_;
@@ -422,6 +423,11 @@ class flimencoder
     framegenerator<AVFrame*, AVFrame*, AVPacket*> av_to_av_encoder() {
         using data_packet = std::tuple<AVFrame*, AVFrame*, AVPacket*>;
         auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
+
+        size_t poster_index = poster_ts_*fps_/profile_.fps_ratio();
+
+        if(poster_index < f_reader->get_frames_to_extract())
+            poster_index_ = poster_index;
 
         AVPacket* pkt = av_packet_alloc();
         AVFrame* frame = av_frame_alloc();
