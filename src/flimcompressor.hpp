@@ -290,7 +290,6 @@ public:
                 const std::vector<codec_spec> &codecs,
                 const double fps,
                 const size_t byterate,
-                const std::vector<sound_frame_t> &audio,
                 const bool group
         ) :
                 ditherer_{ ditherer },
@@ -299,13 +298,17 @@ public:
                 codecs_{ codecs },
                 fps_{ fps },
                 byterate_{ byterate },
-                audio_{ audio },
                 group_{ group }
         {
             //  blah
             current_tick_ = 0;
             in_fr_ = 0;
-            current_audio_ = std::begin( audio_ );
+            //current_audio_ = std::begin( audio_ );
+        }
+
+        size_t get_ticks_until_next_frame() const {
+            size_t next_tick = ticks_from_frame( in_fr_ + 1, fps_ );
+            return next_tick-current_tick_;
         }
 
         // Adds one image to the generated video, keep track of previous
@@ -335,13 +338,13 @@ public:
             {
                 //  Add as much audio as we have for the local ticks
                 std::vector<uint8_t> audio;
-                for (size_t i=0;i!=local_ticks;i++)
-                {
-                    sound_frame_t snd;
-                    if (current_audio_<std::end(audio_))
-                        snd = *current_audio_++;
-                    std::copy( snd.begin(), snd.end(), std::back_inserter(audio) );
-                }
+//                for (size_t i=0;i!=local_ticks;i++)
+//                {
+//                    sound_frame_t snd;
+//                    if (current_audio_<std::end(audio_))
+//                        snd = *current_audio_++;
+//                    std::copy( snd.begin(), snd.end(), std::back_inserter(audio) );
+//                }
 
 // write_image( "/tmp/a.pgm", fb.as_image() );
 // write_image( "/tmp/b.pgm", dest );
@@ -398,13 +401,13 @@ private:
     size_t H_;
     const double fps_;
 
+    CompressorHelper* helper = nullptr;
+
     std::vector<subtitle> subtitles_;
     std::deque<frame> frames_;
 
 public:
-    flimcompressor( size_t W, size_t H, double fps, const std::vector<subtitle> &subtitles ) : W_{W}, H_{H}, fps_{fps}, subtitles_{subtitles} {
-        //CompressorHelper ch{ d, sb, codecs, fps_, byterate, audio_, group };
-    }
+    flimcompressor( size_t W, size_t H, double fps, const std::vector<subtitle> &subtitles ) : W_{W}, H_{H}, fps_{fps}, subtitles_{subtitles} {}
 
     const std::deque<frame> &get_frames() const { return frames_; }
 
@@ -497,6 +500,13 @@ public:
         return spec;
     }
 
+    size_t get_ticks_until_next_frame() {
+        if (helper)
+            return helper->get_ticks_until_next_frame();
+        else
+            return 0;
+    }
+
     void compress() {
         // TODO : Implement
     }
@@ -532,7 +542,7 @@ static bool generate_initial_frame = false;
     Ditherer d{ previous, dp };
     SubtitleBurner sb{  subtitles_ };
     // TODO : CompressorHelper will become a property of flimcompressor. Might have to delete the old version of the code?
-//    CompressorHelper ch{ d, sb, codecs, fps_, byterate, audio_, group };
+    helper = new CompressorHelper(d, sb, codecs, fps_, byterate, group );
 //    for (auto &big_image:images_)
 //       ch.add( big_image );
 //    frames_ = ch.get_frames();

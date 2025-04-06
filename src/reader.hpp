@@ -270,7 +270,7 @@ class ffmpeg_reader : public input_reader {
     int sound_ix = -1;
     double first_frame_second_;
     size_t frames_to_extract_;
-    size_t extracted_frames_;
+    size_t extracted_frames_ = 0;
     bool found_sound_ = false;                   //  To track if sounds starts with an offset
 
 
@@ -396,14 +396,15 @@ public:
     int get_video_frame_index() const {return ixv;}
     int get_audio_frame_index() const {return ixa;}
     size_t get_frames_to_extract() const {return frames_to_extract_;}
+    size_t get_read_images() const {return video_frame_count;}
 
-    bool can_extract_frames() {
+    bool can_extract_frames(size_t num_of_ticks) {
         if(!images_.empty() && (frames_to_extract_ - extracted_frames_) < 2) {
             // No need to check for sound when we're at the last frames
             return true;
         }
-        else if (images_.empty() || sound_->sound_frames_contained() == 0) {
-            // Buffer not reader to be extracted
+        else if (images_.empty() || sound_->sound_frames_contained() < num_of_ticks) {
+            // Buffer not ready for extraction
             return false;
         }
 
