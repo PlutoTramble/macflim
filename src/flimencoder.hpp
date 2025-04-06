@@ -438,11 +438,9 @@ class flimencoder
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
 
-            image* decoded_video = nullptr;
-
             if (pkt->stream_index == video_stream_index) {
                 // Decode video frame
-                decoded_video = f_reader->decode_video(frame, pkt, v_frame);
+                f_reader->decode_video(frame, pkt, v_frame);
                 // Compress it
                 // Encode it
             }
@@ -456,11 +454,19 @@ class flimencoder
 
             av_packet_unref(pkt);
 
+            // TODO : Check if there is something to compress
+            // -- Check into reader buffer:     If image available, and enough data for audio => compress
+            //                                  If last image, but not enough data for audio => compress?
+
+
+            // TODO : Check if there is something to encode
+            // -- Check into compressor buffers:
+            //
+
             if (v_frame || a_frame || e_pkt) {
                 co_yield data_packet{v_frame, a_frame, e_pkt};
             }
 
-            delete decoded_video;
         }
 
         av_packet_free(&pkt);
@@ -511,7 +517,7 @@ public:
         return; // tmp
 
         int i = 0;
-        while (auto next = r->next())
+        while (auto next = r->extract_video_frame())
         {
             if ((i%profile_.fps_ratio())==0)
                 images_.push_back( *next );
@@ -555,7 +561,7 @@ std::cout << "POSTER INDEX: " << poster_index << "\n";
         write_image( "/tmp/poster3.pgm", poster_small_bw );
 
         if (!profile_.silent())
-            while (auto next = r->next_sound())
+            while (auto next = r->extract_sound_frame())
             {
                 audio_samples_.push_back( *next );
             }

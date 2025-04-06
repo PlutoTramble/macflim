@@ -22,7 +22,6 @@ using namespace std::string_literals;
 /**
  * The flimcompressor manages higher aspects of the compression
  */
-
 class flimcompressor
 {
 public:

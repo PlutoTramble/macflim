@@ -136,7 +136,7 @@ void ffmpeg_reader::init_audio_context() {
     }
 }
 
-image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame) {
+void ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame) {
     image* decoded_image_ptr = nullptr;
 
     if (avcodec_send_packet(video_codec_context_, pkt) == 0 && avcodec_receive_frame(video_codec_context_, frame) == 0) {
@@ -159,11 +159,7 @@ image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clon
             video_image_->set_luma(video_dst_data_[0]);
 
             images_.push_back(*default_image_);
-
-            // TODO : Move this somewhere else ;; we let it accumulate in its buffer
             copy(images_.back(), *video_image_);
-            decoded_image_ptr = new image(images_.front());
-            images_.pop_front();
         }
         #ifdef VERBOSE
         else {
@@ -171,7 +167,6 @@ image* ffmpeg_reader::decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& clon
         }
         #endif
     }
-    return decoded_image_ptr;
 }
 
 void ffmpeg_reader::decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame) {

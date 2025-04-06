@@ -48,12 +48,12 @@ public:
         //  Frame rate of the returned images
     virtual double frame_rate() = 0;
 
-        //  Return next image until no more images are available
-    virtual std::unique_ptr<image> next() = 0;
+        //  Return extract_video_frame image until no more images are available
+    virtual std::unique_ptr<image> extract_video_frame() = 0;
     // virtual std::vector<image> images() = 0;
 
-        //  Get the next sound sample, mac format
-    virtual std::unique_ptr<sound_frame_t> next_sound() = 0;
+        //  Get the extract_video_frame sound sample, mac format
+    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() = 0;
 };
 
 
@@ -94,7 +94,7 @@ class filesystem_reader : public input_reader
 
     virtual double frame_rate() { return frame_rate_; }
 
-    virtual std::unique_ptr<image> next()
+    virtual std::unique_ptr<image> extract_video_frame()
     {
         auto img = std::make_unique<image>( 512, 342 ); //  'cause read_image don't support anything else for now
     
@@ -162,7 +162,7 @@ class filesystem_reader : public input_reader
         return res;
     }
 */
-    virtual std::unique_ptr<sound_frame_t> next_sound() { return nullptr; }         //  #### THIS IS COMPLETELY WRONG
+    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() { return nullptr; }         //  #### THIS IS COMPLETELY WRONG
 
 };
 
@@ -391,23 +391,26 @@ public:
     int get_audio_frame_index() const {return ixa;}
     size_t get_frames_to_extract() const {return frames_to_extract_;}
 
-    image* decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
+    void decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
     void decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
 
     virtual double frame_rate() {
         return av_q2d(video_stream_->r_frame_rate);
     }
 
-    virtual std::unique_ptr<image> next() {
-        if (image_ix == -1 || image_ix == (int)images_.size()) {
+    virtual std::unique_ptr<image> extract_video_frame() {
+        if(images_.empty()) {
             return nullptr;
         }
-        auto res = std::make_unique<image>(images_[image_ix]);
-        image_ix++;
-        return res;
+
+        std::unique_ptr<image> image_ptr = std::make_unique<image>(images_.front());
+        images_.pop_front();
+        extracted_frames_++;
+
+        return image_ptr;
     }
 
-    virtual std::unique_ptr<sound_frame_t> next_sound() {
+    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() {
         if (ixa != AVERROR_STREAM_NOT_FOUND) {
             return sound_->extract_front();
         }
