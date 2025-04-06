@@ -1,4 +1,14 @@
-**WARNING: FFMPEG5 IS NOW REQUIRED FOR CREATING FLIMS**
+# ABOUT THIS FORK
+
+**This fork is an attempt to support the creation of longer flims**
+
+* flimmaker puts and keeps everything in memory -- such as decoded and encoded frames. This results to a limitation of how long the flim can be depending on how much RAM you have.
+
+* This fork uses c++20 coroutine in order to decode and encode video in a simultaneous matter.
+
+* There will be a PR once that feature is finished 💯
+
+-PlutoTramble
 
 # MacFlim, the true Mac video player
 
