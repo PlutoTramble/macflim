@@ -209,6 +209,12 @@ public:
         max_sample_ = *std::max_element(std::begin(data_), std::end(data_));
     }
 
+    bool isEmpty() {return data_.empty();}
+
+    size_t sound_frames_contained() {
+        return data_.size() / sound_frame_size();
+    }
+
     std::unique_ptr<sound_frame_t> extract_front() {
 
         if (data_.empty()) {
@@ -390,6 +396,19 @@ public:
     int get_video_frame_index() const {return ixv;}
     int get_audio_frame_index() const {return ixa;}
     size_t get_frames_to_extract() const {return frames_to_extract_;}
+
+    bool can_extract_frames() {
+        if(!images_.empty() && (frames_to_extract_ - extracted_frames_) < 2) {
+            // No need to check for sound when we're at the last frames
+            return true;
+        }
+        else if (images_.empty() || sound_->sound_frames_contained() == 0) {
+            // Buffer not reader to be extracted
+            return false;
+        }
+
+        return true;
+    }
 
     void decode_video(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
     void decode_sound(AVFrame* frame, AVPacket* pkt, AVFrame*& cloned_frame);
