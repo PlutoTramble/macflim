@@ -311,6 +311,7 @@ class flimencoder
 {
     const encoding_profile &profile_;
     input_reader* reader = nullptr;
+    flimcompressor* compressor = nullptr;
 
     std::string out_pattern_ = "out-%06d.pgm"s;
     std::string change_pattern_ = "change-%06d.pgm"s;
@@ -456,10 +457,9 @@ class flimencoder
             // TODO : Check if there is something to compress
             // -- Check into reader buffer:     If image available, and enough data for audio => compress
             //                                  If last image, but not enough data for audio => compress?
-            if(f_reader->can_extract_frames()) {
-
+            while(f_reader->can_extract_frames()) {
+                // TODO : If it's the first image we'll need to generate posters and intitialize the compressor.
             }
-
 
             // TODO : Check if there is something to encode
             // -- Check into compressor buffers:
@@ -512,11 +512,11 @@ public:
         assert(r);
 
         reader = r;
+        compressor = new flimcompressor(profile_.width(), profile_.height(), fps_ / profile_.fps_ratio(), subtitles_ );
 
         encode_av_to_av();
 
-        return; // tmp
-
+/*
         int i = 0;
         while (auto next = r->extract_video_frame())
         {
@@ -525,7 +525,7 @@ public:
             i++;
         }
 
-        assert( images_.size()>0 );
+        //assert( images_.size()>0 );
 
         //  Poster extraction
         image poster_image = images_[0];
@@ -815,6 +815,7 @@ std::cout << "PROFILE BYTERATE " << profile_.byterate() << "\n";
                 write_image( buffer, logimg );
             }
         }
+        */
     }
 };
 

@@ -396,18 +396,17 @@ public:
 private:
     size_t W_;
     size_t H_;
-
-    const std::vector<image> &images_;
-    const std::vector<sound_frame_t> &audio_;
     const double fps_;
-    std::vector<subtitle> subtitles_;
 
-    std::vector<frame> frames_;
+    std::vector<subtitle> subtitles_;
+    std::deque<frame> frames_;
 
 public:
-    flimcompressor( size_t W, size_t H, const std::vector<image> &images, const std::vector<sound_frame_t> &audio, double fps, const std::vector<subtitle> &subtitles ) : W_{W}, H_{H}, images_{images}, audio_{audio}, fps_{fps}, subtitles_{subtitles} {}
+    flimcompressor( size_t W, size_t H, double fps, const std::vector<subtitle> &subtitles ) : W_{W}, H_{H}, fps_{fps}, subtitles_{subtitles} {
+        //CompressorHelper ch{ d, sb, codecs, fps_, byterate, audio_, group };
+    }
 
-    const std::vector<frame> &get_frames() const { return frames_; }
+    const std::deque<frame> &get_frames() const { return frames_; }
 
     bool progress_ = true;
 
@@ -498,8 +497,11 @@ public:
         return spec;
     }
 
+    void compress() {
+        // TODO : Implement
+    }
 
-    void compress( double stability, size_t byterate, bool group, const std::string &filters, const std::string &watermark, const std::vector<codec_spec> &codecs, image::dithering dither, bool bars, const std::string error_algorithm, float error_bleed, bool error_bidi )
+    void init_compressor(double stability, size_t byterate, bool group, const std::string &filters, const std::string &watermark, const std::vector<codec_spec> &codecs, image::dithering dither, bool bars, const std::string error_algorithm, float error_bleed, bool error_bidi )
     {
         image previous( W_, H_ );
         fill( previous, 0 );
@@ -511,7 +513,7 @@ static bool generate_initial_frame = false;
         {
             //  #### We painfully extract what the first image should be
             image img0( W_,H_ );
-            copy( img0, images_[0], bars );
+//            copy( img0, images_[0], bars );
             image img1 = filter( img0, filters.c_str() );
             image img2( W_,H_ );
             if (dither==image::error_diffusion)
@@ -529,10 +531,11 @@ static bool generate_initial_frame = false;
     DitheringParameters dp { bars, filters, dither, error_algorithm, stability, error_bleed, error_bidi, watermark };
     Ditherer d{ previous, dp };
     SubtitleBurner sb{  subtitles_ };
-    CompressorHelper ch{ d, sb, codecs, fps_, byterate, audio_, group };
-    for (auto &big_image:images_)
-        ch.add( big_image );
-    frames_ = ch.get_frames();
+    // TODO : CompressorHelper will become a property of flimcompressor. Might have to delete the old version of the code?
+//    CompressorHelper ch{ d, sb, codecs, fps_, byterate, audio_, group };
+//    for (auto &big_image:images_)
+//       ch.add( big_image );
+//    frames_ = ch.get_frames();
 #else
             //  This is the initial image, all black by default
         image initial_image( previous );
