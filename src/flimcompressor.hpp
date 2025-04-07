@@ -217,7 +217,7 @@ public:
         bool group_;
 
 
-        int in_fr_;             //  Input frame
+        size_t in_fr_;             //  Input frame
         size_t current_tick_;   //  Output tick number
         std::vector<sound_frame_t>::const_iterator current_audio_; //  Current audio
         std::vector<frame> frames_; // Output generated frames
@@ -300,22 +300,30 @@ public:
                 byterate_{ byterate },
                 group_{ group }
         {
-            //  blah
             current_tick_ = 0;
             in_fr_ = 0;
             //current_audio_ = std::begin( audio_ );
         }
 
-        size_t get_ticks_until_next_frame() const {
-            size_t next_tick = ticks_from_frame( in_fr_ + 1, fps_ );
-            return next_tick-current_tick_;
+        size_t get_local_ticks_until_next_frame() const {
+            size_t local_ticks = 1;
+
+            if (group_){
+                size_t ticks = ticks_from_frame( in_fr_ + 1, fps_ );
+                ticks = ticks-current_tick_;
+                local_ticks = ticks;
+            }
+
+            return local_ticks;
         }
 
-        // Adds one image to the generated video, keep track of previous
-        void add( const image &source )
-        {
+        size_t get_num_compressed_frames() const {return in_fr_;}
+
+        std::vector<frame>* process_image(const image &img_src, const std::vector<sound_frame_t> &snd_vector) {
+            auto* frames = new std::vector<frame>();
+
             //  Dither the new image
-            ditherer_.dither( source );
+            ditherer_.dither( img_src );
             image dest = ditherer_.current();
             subtitle_burner_.burn_into( dest, in_fr_/fps_ );
 
@@ -326,28 +334,23 @@ public:
             in_fr_++;
             size_t next_tick = ticks_from_frame( in_fr_, fps_ );
             size_t ticks = next_tick-current_tick_;
-// std::clog << "current_tick:" << current_tick << " in_fr:" << in_fr << " next_tick:" << next_tick << " fps:" << fps_ << "\n";
+
             assert( ticks>0 );
 
             size_t local_ticks = 1;
-
             if (group_)
                 local_ticks = ticks;
 
-            for (size_t i=0;i!=ticks;i+=local_ticks)
-            {
+            for (size_t i=0;i!=ticks;i+=local_ticks) {
                 //  Add as much audio as we have for the local ticks
                 std::vector<uint8_t> audio;
-//                for (size_t i=0;i!=local_ticks;i++)
-//                {
-//                    sound_frame_t snd;
-//                    if (current_audio_<std::end(audio_))
-//                        snd = *current_audio_++;
-//                    std::copy( snd.begin(), snd.end(), std::back_inserter(audio) );
-//                }
-
-// write_image( "/tmp/a.pgm", fb.as_image() );
-// write_image( "/tmp/b.pgm", dest );
+                auto current_audio = std::begin( snd_vector );
+                for (size_t i = 0; i != local_ticks; i++) {
+                    sound_frame_t snd;
+                    if (current_audio < std::end(snd_vector))
+                        snd = *current_audio++;
+                    std::copy(snd.begin(), snd.end(), std::back_inserter(audio));
+                }
 
                 //  Compute the video budget?
                 size_t video_budget = byterate_*local_ticks;
@@ -362,35 +365,18 @@ public:
                         video_budget*codec.penality
                 ); } );
 
-                //  Find the result with highest quality
+                //  Find the result with the highest quality
                 auto best_result = std::max_element(encoding_results.begin(), encoding_results.end(), [](const EncodingResult& r1, const EncodingResult& r2) { return r1.quality() < r2.quality(); } );
 
-// write_image( "/tmp/img1.pgm", best_result->image().as_image() );
-// exit(0);
-
-                //  Construct the frame with best video and audio
+                //  Construct the frame with the best video and audio
                 frame f{ fb, local_ticks, best_result->get_video_encoded_data(), audio, best_result->image() };
 
-                frames_.push_back( f );
-                if (log_progress_)
-                    std::clog << "Encoded " << frames_.size() << " output frames\r" << std::flush;
+                frames->push_back( f );
 
                 current_fb_ = best_result->image();
             }
 
-            auto q = frames_.back().result.proximity( fb );
-
-            // std::clog << "Q=" << q << " \n";
-
-            // total_q_ += q;
-/*
-            if (q!=1)
-            {
-                fprintf( stderr, "# %4d (%5.3fs) \u001b[%sm%05.3f%%\u001b[0m\n", in_fr, current_tick/60.0, q<.9?"91":"0", q*100 );
-            }
-*/
-            histo_.add( q );
-            current_tick_ = next_tick;
+            return frames;
         }
 
         std::vector<frame> get_frames() const { return frames_; }
@@ -401,6 +387,8 @@ private:
     size_t H_;
     const double fps_;
 
+    size_t extracted_frames_ = 0;
+
     CompressorHelper* helper = nullptr;
 
     std::vector<subtitle> subtitles_;
@@ -409,6 +397,11 @@ private:
 public:
     flimcompressor( size_t W, size_t H, double fps, const std::vector<subtitle> &subtitles ) : W_{W}, H_{H}, fps_{fps}, subtitles_{subtitles} {}
 
+    ~flimcompressor() {
+        delete helper;
+    }
+
+    // TODO : To remove
     const std::deque<frame> &get_frames() const { return frames_; }
 
     bool progress_ = true;
@@ -502,13 +495,26 @@ public:
 
     size_t get_ticks_until_next_frame() {
         if (helper)
-            return helper->get_ticks_until_next_frame();
+            return helper->get_local_ticks_until_next_frame();
         else
             return 0;
     }
 
-    void compress() {
-        // TODO : Implement
+    size_t get_compressed_frames() {
+        if(helper)
+            return helper->get_num_compressed_frames();
+        else
+            return 0;
+    }
+
+    void compress(image& img, std::vector<sound_frame_t>& sound_frames) {
+        if(!helper)
+            return;
+
+        std::vector<frame>* frames = helper->process_image(img, sound_frames);
+
+        frames_.insert(frames_.end(), frames->begin(), frames->end());
+        delete frames;
     }
 
     void init_compressor(double stability, size_t byterate, bool group, const std::string &filters, const std::string &watermark, const std::vector<codec_spec> &codecs, image::dithering dither, bool bars, const std::string error_algorithm, float error_bleed, bool error_bidi )
@@ -795,6 +801,19 @@ static bool generate_initial_frame = false;
         // fprintf( stderr, "\n\nFrames rendered at less than 00-90%%: %ld. Rendered at 90-99%%: %ld. Average rendering %7.5f%%.\n", fail2, fail1, total_q/in_fr*100 );
 #endif
     }
+
+    std::unique_ptr<frame> extract_frame() {
+        if(frames_.empty()) {
+            return nullptr;
+        }
+
+        std::unique_ptr<frame> frame_ptr = std::make_unique<frame>(frames_.front());
+        frames_.pop_front();
+        extracted_frames_++;
+
+        return frame_ptr;
+    }
+
 };
 
 

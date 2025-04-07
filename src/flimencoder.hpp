@@ -462,8 +462,8 @@ class flimencoder
             // -- Check into reader buffer:     If image available, and enough data for audio => compress
             //                                  If last image, but not enough data for audio => compress?
 
-            //while(f_reader->can_extract_frames(compressor->get_ticks_until_next_frame())) {
-                // TODO : If it's the first image we'll need to generate posters and initialize the compressor.
+            //while(f_reader->can_extract_frames(compressor->get_local_ticks_until_next_frame())) {
+                // TODO : If it's the first image we'll need to generate posters.
             //}
 
             // TODO : Check if there is something to encode
@@ -492,6 +492,7 @@ class flimencoder
             time_t current_time = time(nullptr);
 
             if(1 < (current_time - last_log_update)) {
+                // Update logs every second
                 last_log_update = current_time;
                 log_progress();
             }
@@ -507,12 +508,17 @@ class flimencoder
 
     void log_progress() {
         auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
-        std::clog << "Read " << f_reader->get_read_images() << " frames\r" << std::flush;
+        std::clog << "Read " << f_reader->get_read_images() << " frames | Processed " << compressor->get_compressed_frames() << " ticks\r" << std::flush;
     }
 
 public:
 //  #### remove in and audio
     flimencoder( const encoding_profile &profile ) : profile_{ profile } {}
+
+    ~flimencoder() {
+        delete reader;
+        delete compressor;
+    }
 
     void set_fps( double fps ) { fps_ = fps; }
     void set_comment( const std::string comment ) { comment_ = comment; }
@@ -531,7 +537,19 @@ public:
         assert(r);
 
         reader = r;
+
         compressor = new flimcompressor(profile_.width(), profile_.height(), fps_ / profile_.fps_ratio(), subtitles_ );
+        compressor->init_compressor( profile_.stability(),
+                                     profile_.byterate(),
+                                     profile_.group(),
+                                     profile_.filters(),
+                                     watermark_,
+                                     profile_.codecs(),
+                                     profile_.dither(),
+                                     profile_.bars(),
+                                     profile_.error_algorithm(),
+                                     profile_.error_bleed(),
+                                     profile_.error_bidi());
 
         encode_av_to_av();
 
