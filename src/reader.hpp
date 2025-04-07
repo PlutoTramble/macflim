@@ -49,11 +49,11 @@ public:
     virtual double frame_rate() = 0;
 
         //  Return extract_video_frame image until no more images are available
-    virtual std::unique_ptr<image> extract_video_frame() = 0;
+    virtual image* extract_video_frame() = 0;
     // virtual std::vector<image> images() = 0;
 
         //  Get the extract_video_frame sound sample, mac format
-    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() = 0;
+    virtual sound_frame_t* extract_sound_frame() = 0;
 };
 
 
@@ -94,34 +94,34 @@ class filesystem_reader : public input_reader
 
     virtual double frame_rate() { return frame_rate_; }
 
-    virtual std::unique_ptr<image> extract_video_frame()
-    {
-        auto img = std::make_unique<image>( 512, 342 ); //  'cause read_image don't support anything else for now
-    
-        if (image_read_)
-            return nullptr;
-
-        if (current_image_index_>=from_frame_+count_)
-        {   
-            image_read_ = true;
-            return nullptr;
-        }
-
-        char buffer[1024];
-        sprintf( buffer, file_pattern_.c_str(), current_image_index_ );
-
-        if (!read_image( *(img.get()), buffer ))
-        {
-            image_read_ = true;
-            return nullptr;
-        }
-
-        current_image_index_++;
-
-        std::clog << "." << std::flush;
-
-        return img;
-    }
+    virtual image* extract_video_frame(){} // TODO : Fix this
+//    {
+//        auto img = std::make_unique<image>( 512, 342 ); //  'cause read_image don't support anything else for now
+//
+//        if (image_read_)
+//            return nullptr;
+//
+//        if (current_image_index_>=from_frame_+count_)
+//        {
+//            image_read_ = true;
+//            return nullptr;
+//        }
+//
+//        char buffer[1024];
+//        sprintf( buffer, file_pattern_.c_str(), current_image_index_ );
+//
+//        if (!read_image( *(img.get()), buffer ))
+//        {
+//            image_read_ = true;
+//            return nullptr;
+//        }
+//
+//        current_image_index_++;
+//
+//        std::clog << "." << std::flush;
+//
+//        return img;
+//    }
 
 /*
     virtual size_t sample_rate() { return 370*60; };
@@ -162,7 +162,7 @@ class filesystem_reader : public input_reader
         return res;
     }
 */
-    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() { return nullptr; }         //  #### THIS IS COMPLETELY WRONG
+    virtual sound_frame_t* extract_sound_frame() { return nullptr; }         //  #### THIS IS COMPLETELY WRONG
 
 };
 
@@ -178,7 +178,8 @@ class sound_buffer {
     float max_sample_;
 
     size_t sound_frame_size() {
-        return (sound_frame_t::size / 60.0) * sample_rate_;
+        // TODO : To confirm. Good chance that isn't right.
+        return static_cast<size_t>(std::round(sample_rate_ / 60.0));
     }
 
 public:
@@ -204,46 +205,46 @@ public:
         }
     }
 
-    void process() {
-        min_sample_ = *std::min_element(std::begin(data_), std::end(data_));
-        max_sample_ = *std::max_element(std::begin(data_), std::end(data_));
-    }
-
     bool isEmpty() {return data_.empty();}
 
     size_t sound_frames_contained() {
         return data_.size() / sound_frame_size();
     }
 
-    std::unique_ptr<sound_frame_t> extract_front() {
+    sound_frame_t& extract_front() {
+        // TODO : Test it
+        size_t samples_needed = sound_frame_size();
 
-        if (data_.empty()) {
-            return nullptr;
+        if (data_.size() < samples_needed) {
+            return *(new sound_frame_t());
         }
 
-        std::unique_ptr<sound_frame_t> s_frame = std::make_unique<sound_frame_t>();
+        // Normalization
+        min_sample_ = *std::min_element(data_.begin(), data_.begin() + samples_needed);
+        max_sample_ = *std::max_element(data_.begin(), data_.begin() + samples_needed);
+
+        if (min_sample_ == max_sample_) {
+            min_sample_ -= 1.0f;
+            max_sample_ += 1.0f;
+        }
+
+        sound_frame_t* s_frame = new sound_frame_t();
 
         for (int i = 0; i != sound_frame_t::size; i++) {
-            size_t index = (i / sound_frame_t::size / 60.0) * sample_rate_;
-            if (index < data_.size()) {
-                // sound data
-                s_frame->at(i) = (data_[index] - min_sample_) / (max_sample_ - min_sample_) * 255;
-            } else {
-                // silence
-                s_frame->at(i) = 128;
-            }
+            float alpha = static_cast<float>(i) / sound_frame_t::size;
+            size_t sample_index = static_cast<size_t>(alpha * samples_needed);
+
+            if (sample_index >= samples_needed)
+                sample_index = samples_needed - 1;
+
+            float sample = data_[sample_index];
+            uint8_t encoded = static_cast<uint8_t>(std::clamp((sample - min_sample_) / (max_sample_ - min_sample_) * 255.0f, 0.0f, 255.0f));
+            s_frame->at(i) = encoded;
         }
 
-        const size_t frame_size = sound_frame_size();
+        data_.erase(data_.begin(), data_.begin() + samples_needed);
 
-        if(frame_size < data_.size()) {
-            data_.erase(data_.begin(), data_.begin() + frame_size);
-        }
-        else {
-            data_.clear();
-        }
-
-        return s_frame;
+        return *s_frame;
     }
 };
 
@@ -418,21 +419,21 @@ public:
         return av_q2d(video_stream_->r_frame_rate);
     }
 
-    virtual std::unique_ptr<image> extract_video_frame() {
+    virtual image* extract_video_frame() {
         if(images_.empty()) {
             return nullptr;
         }
 
-        std::unique_ptr<image> image_ptr = std::make_unique<image>(images_.front());
+        image* image_ptr = new image(images_.front());
         images_.pop_front();
         extracted_frames_++;
 
         return image_ptr;
     }
 
-    virtual std::unique_ptr<sound_frame_t> extract_sound_frame() {
+    virtual sound_frame_t* extract_sound_frame() {
         if (ixa != AVERROR_STREAM_NOT_FOUND) {
-            return sound_->extract_front();
+            return &sound_->extract_front();
         }
         return nullptr;
     }
