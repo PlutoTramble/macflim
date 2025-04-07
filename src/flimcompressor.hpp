@@ -6,6 +6,7 @@
 #include "imgcompress.hpp"
 #include "compressor.hpp"
 
+#include <utility>
 #include <vector>
 #include <array>
 #include <bitset>
@@ -82,7 +83,7 @@ public:
         const DitheringParameters dp_;
 
     public:
-        Ditherer( const image &inital_image, const DitheringParameters &dp ) :
+        Ditherer( const image inital_image, const DitheringParameters dp ) :
                 W_{ inital_image.W() },
                 H_{ inital_image.H() },
                 dithered_image_{ W_, H_ },
@@ -142,7 +143,7 @@ public:
 
     public:
 
-        SubtitleBurner( const std::vector<subtitle> &subtitles ) :
+        SubtitleBurner( const std::vector<subtitle> subtitles ) :
                 subtitles_{ subtitles }
         {}
 
@@ -207,10 +208,10 @@ public:
 
     class CompressorHelper
     {
-        Ditherer& ditherer_;
-        SubtitleBurner &subtitle_burner_;
+        Ditherer ditherer_;
+        SubtitleBurner subtitle_burner_;
         framebuffer current_fb_;     //  The framebuffer displayed on screen at each step [#### check creation]
-        const std::vector<codec_spec> &codecs_;
+        const std::vector<codec_spec> codecs_;
         const double fps_;      //  Input fps
         const size_t byterate_;
         //const std::vector<sound_frame_t> &audio_;    //  The audio input
@@ -285,15 +286,15 @@ public:
 
     public:
         CompressorHelper(
-                Ditherer& ditherer,
-                SubtitleBurner &subtitle_burner,
-                const std::vector<codec_spec> &codecs,
+                Ditherer ditherer,
+                SubtitleBurner subtitle_burner,
+                const std::vector<codec_spec> codecs,
                 const double fps,
                 const size_t byterate,
                 const bool group
         ) :
-                ditherer_{ ditherer },
-                subtitle_burner_{ subtitle_burner },
+                ditherer_{std::move( ditherer )},
+                subtitle_burner_{std::move( subtitle_burner )},
                 current_fb_{ ditherer_.current() },
                 codecs_{ codecs },
                 fps_{ fps },
@@ -352,6 +353,12 @@ public:
                     std::copy(snd.begin(), snd.end(), std::back_inserter(audio));
                 }
 
+                std::stringstream filePath;
+                filePath << "/tmp/test/" << in_fr_ << ".pgm";
+
+                 write_image( filePath.str().c_str(), fb.as_image() );
+                 //write_image( "/tmp/b.pgm", dest );
+
                 //  Compute the video budget?
                 size_t video_budget = byterate_*local_ticks;
 
@@ -375,6 +382,8 @@ public:
 
                 current_fb_ = best_result->image();
             }
+
+            current_tick_ = next_tick;
 
             return frames;
         }
@@ -493,7 +502,7 @@ public:
         return spec;
     }
 
-    size_t get_ticks_until_next_frame() {
+    size_t get_local_ticks_until_next_frame() {
         if (helper)
             return helper->get_local_ticks_until_next_frame();
         else

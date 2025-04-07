@@ -440,7 +440,7 @@ class flimencoder
             throw std::runtime_error("Failed to allocate packet or frame");
         }
 
-        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0 || f_reader->can_extract_frames(compressor->get_ticks_until_next_frame())) {
+        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0 || f_reader->can_extract_frames(compressor->get_local_ticks_until_next_frame())) {
             AVFrame* v_frame = nullptr;
             AVFrame* a_frame = nullptr;
             AVPacket* e_pkt = nullptr;
@@ -462,9 +462,24 @@ class flimencoder
             // -- Check into reader buffer:     If image available, and enough data for audio => compress
             //                                  If last image, but not enough data for audio => compress?
 
-            //while(f_reader->can_extract_frames(compressor->get_local_ticks_until_next_frame())) {
-                // TODO : If it's the first image we'll need to generate posters.
-            //}
+            size_t local_ticks = compressor->get_local_ticks_until_next_frame();
+            while(f_reader->can_extract_frames(local_ticks)) {
+                // TODO : Need to generate posters.
+                image* img = f_reader->extract_video_frame();
+                std::vector<sound_frame_t> sound_frames;
+
+                // Populate `sound_frames` vector
+                for(size_t i = 0; i < local_ticks; i++) {
+                    sound_frame_t* snd_ptr = f_reader->extract_sound_frame();
+                    sound_frame_t snd = *snd_ptr;
+                    sound_frames.push_back(snd);
+                    delete snd_ptr;
+                }
+
+                compressor->compress(*img, sound_frames);
+                delete img;
+                sound_frames.clear();
+            }
 
             // TODO : Check if there is something to encode
             // -- Check into compressor buffers:
@@ -508,7 +523,7 @@ class flimencoder
 
     void log_progress() {
         auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
-        std::clog << "Read " << f_reader->get_read_images() << " frames | Processed " << compressor->get_compressed_frames() << " ticks\r" << std::flush;
+        std::clog << "Read " << f_reader->get_read_images() << " frames | Processed " << compressor->get_compressed_frames() << " frames\r" << std::flush;
     }
 
 public:

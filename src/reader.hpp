@@ -258,8 +258,6 @@ class ffmpeg_reader : public input_reader {
     AVCodecContext *audio_codec_context_;
     uint8_t *video_dst_data_[4] = {NULL};
     int video_dst_linesize_[4];
-    AVPacket *pkt_;
-    AVFrame *frame_;
     int ixv;    //  Video frame index
     int ixa;    //  Audio frame index
     size_t video_frame_count = 0;
@@ -312,55 +310,6 @@ class ffmpeg_reader : public input_reader {
                          video_codec_context_->height << "\n";
             std::clog << bufsize << "\n";
         }
-
-        // TODO : To delete -- old implementation
-//        frame_ = av_frame_alloc();
-//
-//        pkt_ = av_packet_alloc();
-//        if (!pkt_) {
-//            throw "Failed to allocate packet";
-//        }
-//
-//        int got_frame = 0;
-//
-//        while (av_read_frame(format_context_, pkt_) >= 0 && images_.size() < frames_to_extract_) {
-//            do {
-//                auto ret = decode_packet(&got_frame, pkt_);
-//                if (ret < 0) {
-//                    break;
-//                }
-//                pkt_->data += ret;
-//                pkt_->size -= ret;
-//            } while (pkt_->size > 0);
-//            av_packet_unref(pkt_);
-//        }
-//
-//        /* flush cached frames */
-//        if (images_.size() != frames_to_extract_) {
-//            pkt_->data = NULL;
-//            pkt_->size = 0;
-//            do {
-//                decode_packet(&got_frame, pkt_);
-//            } while (got_frame);
-//        }
-//
-//        std::clog << "\n";
-//
-//        image_ix = 0;
-//
-//        if (sDebug) {
-//            std::clog << "\nAcquired " << images_.size() << " frames of video for a total of "
-//                      << images_.size() / av_q2d(video_stream_->r_frame_rate) << " seconds \n";
-//        }
-//
-//        if (ixa != AVERROR_STREAM_NOT_FOUND) {
-//            sound_->process();
-//            sound_ix = 0;
-//        }
-//
-//        if (sDebug) {
-//            std::clog << "\n";
-//        }
     }
 
 public:
@@ -382,8 +331,6 @@ public:
         if (audio_codec_context_) {
             avcodec_free_context(&audio_codec_context_);
         }
-        av_frame_free(&frame_);
-        av_packet_free(&pkt_);
         av_freep(&video_dst_data_[0]);
         if (sDebug) {
             std::clog << "Closed media file\n";
