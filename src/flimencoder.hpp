@@ -324,8 +324,12 @@ class flimencoder
     std::vector<sound_frame_t> audio_samples_;
 
     double fps_ = 24;
+
     size_t poster_index_ = 0;
     double poster_ts_ = 0;
+    image* poster_image_ = nullptr;
+    image* poster_small_ = nullptr;
+    image* poster_small_bw_ = nullptr;
 
     std::string comment_;
 
@@ -339,46 +343,30 @@ class flimencoder
         return ticks_from_frame( n-1, fps_/profile_.fps_ratio() );
     }
 
-#if 0
-    //  Read all images from disk
-    void read_images( size_t from, size_t to, bool half_rate=false )
-    {
-        std::clog << "READ IMAGES ";
+    void make_posters(image& img) {
+        poster_image_ = new image(img.W(), img.H());
+        copy(*poster_image_, img, false);
 
-        static char symb[] = "123456789.";
+        auto filters_string = profile_.filters();
+        *poster_image_ = filter( *poster_image_, filters_string.c_str() );
 
-        bool skip = false;
+        poster_small_ = new image( 128, 86 );
+        copy( *poster_small_, *poster_image_, false );
 
-        for (int i=from;i!=to+1;i++)
-        {
-            if (half_rate)
-            {
-                if (skip)
-                {
-                    skip = false;
-                    continue;
-                }
-                skip = true;
-            }
+        image previous( poster_small_->W(), poster_small_->H() );
+        fill( previous, 0 );
 
-            char buffer[1024];
-            sprintf( buffer, in_.c_str(), i );
+        poster_small_bw_ = poster_small_;
 
-            image img( profile_.width(), profile_.height() );
+        if (profile_.dither()==image::error_diffusion)
+            error_diffusion( *poster_small_bw_, *poster_small_, previous, 0, *get_error_diffusion_by_name( profile_.error_algorithm() ), profile_.error_bleed(), profile_.error_bidi() );
+        else if (profile_.dither()==image::ordered)
+            ordered_dither( *poster_small_bw_, *poster_small_, previous );
 
-            if (!read_image( img, buffer ))
-                return;
-            images_.push_back( img );
-
-            std::clog << symb[i%(sizeof(symb)-1)];
-            if ((i%(sizeof(symb)-1))!=(sizeof(symb)-2))
-                std::clog << (char)0x8;
-            std::clog << std::flush;
-        }
-        std::clog << "\n";
-        std::clog << "VIDEO: READ " << images_.size() << " images\n";
+        write_image( "/tmp/poster1.pgm", *poster_image_ );
+        write_image( "/tmp/poster2.pgm", *poster_small_ );
+        write_image( "/tmp/poster3.pgm", *poster_small_bw_ );
     }
-#endif
 
     void fix()
     {
@@ -447,26 +435,22 @@ class flimencoder
 
             if (pkt->stream_index == video_stream_index) {
                 f_reader->decode_video(frame, pkt, v_frame);
-                // Compress it
                 // Encode it
             }
             else if (pkt->stream_index == audio_stream_index) {
                 f_reader->decode_sound(frame, pkt, a_frame);
-                // Compress it
                 // Encode it
             }
 
             av_packet_unref(pkt);
 
-            // TODO : Check if there is something to compress
-            // -- Check into reader buffer:     If image available, and enough data for audio => compress
-            //                                  If last image, but not enough data for audio => compress?
-
             size_t local_ticks = compressor->get_local_ticks_until_next_frame();
             while(f_reader->can_extract_frames(local_ticks)) {
-                // TODO : Need to generate posters.
                 image* img = f_reader->extract_video_frame();
                 std::vector<sound_frame_t> sound_frames;
+
+                if(!poster_image_ && f_reader->get_extracted_frames() >= poster_index)
+                    make_posters(*img);
 
                 // Populate `sound_frames` vector
                 for(size_t i = 0; i < local_ticks; i++) {
@@ -481,7 +465,7 @@ class flimencoder
                 sound_frames.clear();
             }
 
-            // TODO : Check if there is something to encode
+            // TODO : Check if there is something to write
             // -- Check into compressor buffers:
             //
 
@@ -533,6 +517,10 @@ public:
     ~flimencoder() {
         delete reader;
         delete compressor;
+
+        delete poster_image_;
+        delete poster_small_;
+        delete poster_small_bw_;
     }
 
     void set_fps( double fps ) { fps_ = fps; }
@@ -569,68 +557,6 @@ public:
         encode_av_to_av();
 
 /*
-        int i = 0;
-        while (auto next = r->extract_video_frame())
-        {
-            if ((i%profile_.fps_ratio())==0)
-                images_.push_back( *next );
-            i++;
-        }
-
-        //assert( images_.size()>0 );
-
-        //  Poster extraction
-        image poster_image = images_[0];
-        size_t poster_index = poster_ts_*fps_/profile_.fps_ratio();
-
-        if (poster_index < images_.size())
-            poster_image = images_[poster_index];
-
-std::cout << "POSTER INDEX: " << poster_index << "\n";
-
-        auto filters_string = profile_.filters();
-        poster_image = filter( poster_image, filters_string.c_str() );
-
-
-        image poster_small( 128, 86 );
-        copy( poster_small, poster_image, false );
-
-        image previous( poster_small.W(), poster_small.H() );
-        fill( previous, 0 );
-
-        // auto prev = poster_small;
-        auto poster_small_bw = poster_small;
-        // auto error_diff = get_error_diffusion_by_name( "floyd" );
-
-
-        if (profile_.dither()==image::error_diffusion)
-            error_diffusion( poster_small_bw, poster_small, previous, 0, *get_error_diffusion_by_name( profile_.error_algorithm() ), profile_.error_bleed(), profile_.error_bidi() );
-        else if (profile_.dither()==image::ordered)
-            ordered_dither( poster_small_bw, poster_small, previous );
-
-        // error_diffusion( poster_small_bw, poster_small, prev, 0, *error_diff, 0.99, true );
-        write_image( "/tmp/poster1.pgm", poster_image );
-        write_image( "/tmp/poster2.pgm", poster_small );
-        write_image( "/tmp/poster3.pgm", poster_small_bw );
-
-        if (!profile_.silent())
-            while (auto next = r->extract_sound_frame())
-            {
-                audio_samples_.push_back( *next );
-            }
-
-        // audio_samples_ = normalize_sound( r->raw_sound(), images_.size()/fps_*60*370 );
-
-        fix();
-
-        flimcompressor fc{ profile_.width(), profile_.height(), images_, audio_samples_, fps_ / profile_.fps_ratio(), subtitles_ };
-
-        fc.compress( profile_.stability(), profile_.byterate(), profile_.group(), profile_.filters(), watermark_, profile_.codecs(), profile_.dither(), profile_.bars(), profile_.error_algorithm(), profile_.error_bleed(), profile_.error_bidi() );
-
-        if (out_pattern_!="") delete_files_of_pattern( out_pattern_ );
-        if (diff_pattern_!="") delete_files_of_pattern( diff_pattern_ );
-        if (change_pattern_!="") delete_files_of_pattern( change_pattern_ );
-        if (target_pattern_!="") delete_files_of_pattern( target_pattern_ );
 
         auto frames = fc.get_frames();
 

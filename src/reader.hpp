@@ -345,6 +345,7 @@ public:
     int get_audio_frame_index() const {return ixa;}
     size_t get_frames_to_extract() const {return frames_to_extract_;}
     size_t get_read_images() const {return video_frame_count;}
+    size_t get_extracted_frames() const {return extracted_frames_;}
 
     bool can_extract_frames(size_t num_of_ticks) {
         if(!images_.empty() && (frames_to_extract_ - extracted_frames_) < 2) {
