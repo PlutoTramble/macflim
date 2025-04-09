@@ -214,14 +214,10 @@ public:
         const std::vector<codec_spec> codecs_;
         const double fps_;      //  Input fps
         const size_t byterate_;
-        //const std::vector<sound_frame_t> &audio_;    //  The audio input
         bool group_;
-
 
         size_t in_fr_;             //  Input frame
         size_t current_tick_;   //  Output tick number
-        std::vector<sound_frame_t>::const_iterator current_audio_; //  Current audio
-        std::vector<frame> frames_; // Output generated frames
         bool log_progress_ = true;
         // double total_q_ = 0;        //  Total quality
         static const size_t BucketCount = 1000;       //  Error distribution
@@ -516,6 +512,10 @@ public:
             return 0;
     }
 
+    bool frame_buffer_empty() {
+        return frames_.empty();
+    }
+
     void compress(image& img, std::vector<sound_frame_t>& sound_frames) {
         if(!helper)
             return;
@@ -558,269 +558,18 @@ static bool generate_initial_frame = false;
     SubtitleBurner sb{  subtitles_ };
     // TODO : CompressorHelper will become a property of flimcompressor. Might have to delete the old version of the code?
     helper = new CompressorHelper(d, sb, codecs, fps_, byterate, group );
-//    for (auto &big_image:images_)
-//       ch.add( big_image );
-//    frames_ = ch.get_frames();
-#else
-            //  This is the initial image, all black by default
-        image initial_image( previous );
-
-        framebuffer current_fb{ previous };     //  The framebuffer displayed on screen at each step
-
-        int in_fr=0;
-
-        size_t current_tick = 0;
-
-        const size_t BucketsCount = 1000;
-        std::vector<size_t> fail;
-        fail.resize( BucketsCount+1, 0 );
-
-        // double total_q = 0;
-
-            //  The audio ptr
-        auto audio = std::begin( audio_ );
-
-        for (auto &big_image:images_)
-        {
-            image dest( W_, H_ );
-
-            image source_image( W_, H_ );   //  note: was 512x342
-            copy( source_image, big_image, bars );
-
-            image img = filter( source_image, filters.c_str() );
-
-            if (dither==image::error_diffusion)
-                error_diffusion( dest, img, previous, stability, *get_error_diffusion_by_name( error_algorithm ), error_bleed, error_bidi );
-            else if (dither==image::ordered)
-                ordered_dither( dest, img, previous );
-            else
-                throw "Unknown dithering option";
-
-            previous = dest;
-            //  dest = filter( dest, "gsc" );
-            
-            round_corners( dest );
-            ::watermark( dest, watermark );
-
-            if (subtitles_.size()>0)
-            {
-                double t = in_fr/fps_;
-                if (t>=subtitles_.front().start)
-                {
-                    if (t<subtitles_.front().stop)
-                    {
-                        ::burn_subtitle( dest, subtitles_.front().text.front() );   //  #### zero line subtitles will crash
-                    }
-                    else
-                    {
-                        subtitles_.erase( subtitles_.begin() ); //  We should flip the subtitles order in constructor!
-                    }
-                }
-            }
-
-
-
-            //  DEBUG frame count
-            // {
-            //     char buffer[1024];
-            //     sprintf( buffer, "%zu", current_tick );
-            //     ::watermark( dest, buffer );
-            // }
-            framebuffer fb{ dest };
-
-                //  Let's see how many ticks we have to display this image
-            in_fr++;
-            size_t next_tick = ticks_from_frame( in_fr, fps_ );
-            size_t ticks = next_tick-current_tick;
-// std::clog << "current_tick:" << current_tick << " in_fr:" << in_fr << " next_tick:" << next_tick << " fps:" << fps_ << "\n";
-            assert( ticks>0 );
-
-            size_t local_ticks = 1;
-
-            if (group)
-                local_ticks = ticks;
-
-            for (size_t i=0;i!=ticks;i+=local_ticks)
-            {
-
-                    //  Build the frame
-                frame f{ W_, H_ };
-
-                f.ticks = local_ticks;
-
-                for (size_t i=0;i!=local_ticks;i++)
-                {
-
-                    sound_frame_t snd;
-                    if (audio<std::end(audio_))
-                        snd = *audio++;
-                    std::copy( snd.begin(), snd.end(), std::back_inserter(f.audio) );
-                }
-
-                    //  What is the video budget?
-                size_t video_budget = byterate*local_ticks;
-               
-                    //  Encode within that budget with every codec
-                
-
-                std::vector<std::vector<uint8_t>> encoded_datas;
-                std::vector<double> qualities;
-                std::vector<framebuffer> encoded_framebuffers;
-
-// write_image( "/tmp/img2.pgm", fb.as_image() );
-
-                for (auto &codec:codecs)
-                {
-                    auto codec_current_fb{ current_fb };
-
-                    encoded_datas.push_back( codec.coder->compress( codec_current_fb, fb, /* weigths, */ video_budget*codec.penality ) );
-                    qualities.push_back( codec_current_fb.proximity( fb ) );
-                    encoded_framebuffers.push_back( codec_current_fb );     //  std::move ...
-                }
-
-
-#if 0
- Later:
-                std::transform(
-//                    std::execution::par_unseq,
-                    std::begin(codecs),
-                    std::end(codecs),
-                    std::back_inserter(encoded_datas),
-                    [&]( auto &codec ) { auto codec_current_fb = current_fb; return codec.coder->compress( codec_current_fb, fb, /* weigths, */ video_budget ); }
-                );
-#endif
-
-                auto best_ix = std::max_element( std::begin(qualities), std::end(qualities) )-std::begin(qualities);
-
-                    //  HACK: Extra verbosity for specific compile-time specified condition
-                if (frames_.size()==178 && false)
-                {
-                    int img = frames_.size()+1;
-                    std::clog << "CODEC log enabled for frame #" << img << ":\n";
-                    for (size_t i=0;i!=codecs.size();i++)
-                    {
-                        char buffer[1024];
-                        sprintf( buffer, "codec-%06d-img-%d.pgm", img, (int)codecs[i].signature );
-                        auto logimg = encoded_framebuffers[i].as_image();
-                        write_image( buffer, logimg );
-
-                        sprintf( buffer, "codec-%06d-xor-%d.pgm", img, (int)codecs[i].signature );
-                        auto logimg2 = (encoded_framebuffers[i]^current_fb).inverted().as_image();
-                        write_image( buffer, logimg2 );
-
-                        sprintf( buffer, "codec-%06d-yor-%d.pgm", img, (int)codecs[i].signature );
-                        auto logimg3 = (encoded_framebuffers[i]^fb).inverted().as_image();
-                        write_image( buffer, logimg3 );
-
-                        std::clog << "  "
-                                  << codecs[i].coder->name()
-                                  << " bytes:" 
-                                  << encoded_datas[i].size() 
-                                  << " quality:"
-                                  << qualities[i] 
-                                  << " pixel_count:" 
-                                  << (encoded_framebuffers[i]^current_fb).pixel_count() 
-                                  << "\n";
-                    }
-
-
-                    char buffer[1024];
-                    sprintf( buffer, "codec-%06d-img-target.pgm", img );
-                    auto logimg = fb.as_image();
-                    write_image( buffer, logimg );
-                    fprintf( stderr, "\n" );
-                }
-
-                // std::clog << best_ix;        //  encoder ised
-
-                f.video = encoded_datas[best_ix];
-                f.video.insert( std::begin(f.video), codecs[best_ix].signature );
-                f.video.insert( std::begin(f.video), 0x00 );
-                f.video.insert( std::begin(f.video), 0x00 );
-                f.video.insert( std::begin(f.video), 0x00 );
-
-                current_fb = encoded_framebuffers[best_ix];
-
-// write_image( "/tmp/img0.pgm", current_fb.as_image() );
-// exit(0);
-
-                f.source = fb;
-                f.result = current_fb;
-
-                frames_.push_back( f );
-                if (progress_)
-                    std::clog << "Encoded " << frames_.size() << " output frames\r" << std::flush;
-            }
-
-            auto q = frames_.back().result.proximity( fb );
-
-            std::clog << "Q=" << q << " \n";
-
-            // total_q += q;
-/*
-            if (q!=1)
-            {
-                fprintf( stderr, "# %4d (%5.3fs) \u001b[%sm%05.3f%%\u001b[0m\n", in_fr, current_tick/60.0, q<.9?"91":"0", q*100 );
-            }
-*/
-            fail[q*BucketsCount]++;
-
-            current_tick = next_tick;
-        }
-
-        if (loop_to_initial)
-        {
-            std::clog << "Looping to initial\n";
-        }
-
-        std::clog << "\n";
-
-        bool dump_stats = true;    //  #### Move to argument
-
-        if (dump_stats)
-        {
-            std::clog << "+----------+--------+----------+----------+\n";
-            std::clog << "|     Q    | Frames |   Perc.  |  Cumul.  |\n";
-            std::clog << "|----------|--------|----------|----------|\n";
-        }
-        size_t cumulative = 0;
-        double var99 = 0;
-        double var98 = 0;
-        double var95 = 0;
-        for (size_t i=0;i!=BucketsCount+1;i++)
-        {
-            cumulative += fail[i];
-            auto percent = (cumulative*1.0/in_fr);
-            if (percent>0.01 && var99==0)
-                var99 = i*1.0/BucketsCount;
-            if (percent>0.02 && var98==0)
-                var98 = i*1.0/BucketsCount;
-            if (percent>0.05 && var95==0)
-                var95 = i*1.0/BucketsCount;
-            if (dump_stats)
-                if (fail[i])
-                    fprintf( stderr, "| %7.3f%% | %6zu | %7.3f%% | %7.3f%% |\n", i*1.0/BucketsCount*100, fail[i], (fail[i]*1.0/in_fr)*100, percent*100 );
-        }
-        if (dump_stats)
-            std::clog << "+----------+--------+----------+----------+\n";
-        std::clog << var99*100 << "% of frames are within 1% of the target pixels\n";
-        std::clog << var98*100 << "% of frames are within 2% of the target pixels\n";
-        std::clog << var95*100 << "% of frames are within 5% of the target pixels\n";
-
-        // fprintf( stderr, "\n\nFrames rendered at less than 00-90%%: %ld. Rendered at 90-99%%: %ld. Average rendering %7.5f%%.\n", fail2, fail1, total_q/in_fr*100 );
-#endif
     }
 
-    std::unique_ptr<frame> extract_frame() {
+    frame* extract_frame() {
         if(frames_.empty()) {
             return nullptr;
         }
 
-        std::unique_ptr<frame> frame_ptr = std::make_unique<frame>(frames_.front());
+        auto* frm = new frame(frames_.front());
         frames_.pop_front();
         extracted_frames_++;
 
-        return frame_ptr;
+        return frm;
     }
 
 };

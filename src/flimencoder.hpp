@@ -322,6 +322,8 @@ class flimencoder
 
     std::vector<image> images_;
     std::vector<sound_frame_t> audio_samples_;
+    std::back_insert_iterator<std::vector<uint8_t>>* out_toc_;
+    std::ofstream out_;
 
     double fps_ = 24;
 
@@ -385,53 +387,54 @@ class flimencoder
         return res;
     }
 
-    std::vector<u_int8_t> normalize_sound( std::vector<double> sound_samples, size_t len )
-    {
-        sound_samples.resize(len);
-        std::vector<u_int8_t> res;
+    void write_frame(flimcompressor::frame& frm) {
+        std::vector<uint8_t> movie; //  #### Should be 'frames'
+        auto out_movie = std::back_inserter( movie );
 
-        if (sound_samples.size()>0)
+        size_t frame_start = movie.size();
+
+        write2( out_movie, frm.ticks );
+
+        if (!profile_.silent())
         {
-            auto mi = std::min_element( std::begin(sound_samples), std::end(sound_samples) );
-            auto ma = std::max_element( std::begin(sound_samples), std::end(sound_samples) );
-            double scale = std::max( ::fabs(*mi), ::fabs(*ma) );
-            std::transform( std::begin(sound_samples), std::end(sound_samples), std::back_inserter(res), [&]( double v ) { return clamp( (v/scale)*128+128, 0, 255 ); } );
-            std::clog   << "Normalized  sound : [" << *mi << "," << *ma << "] => ["
-                        << (int)*std::min_element( std::begin(res), std::end(res) ) << ","
-                        << (int)*std::max_element( std::begin(res), std::end(res) ) << "]\n"; 
+            write2( out_movie, frm.ticks*370+8 );           //  size of sound + header + size itself
+            write2( out_movie, 0 );                       //  ffMode
+            write4( out_movie, 65536 );                   //  rate
+            write( out_movie, frm.audio );
         }
         else
         {
-            std::clog << "SOUND IS EMPTY\n";
+            write2( out_movie, 2 );           //  No sound
         }
+        write2( out_movie, frm.video.size()+2 );
+        write( out_movie, frm.video );
 
-        return res;
+        //  TOC entry for current frame
+        write2( *out_toc_, movie.size()-frame_start );
+
+        out_.write(reinterpret_cast<char*>(&movie), movie.size());
+
+//        for(size_t i = 0; i < movie.size(); i++)
+//            out_.write(reinterpret_cast<char*>(&movie[i]), 1);
     }
 
-    framegenerator<AVFrame*, AVFrame*, AVPacket*> av_to_av_encoder() {
-        using data_packet = std::tuple<AVFrame*, AVFrame*, AVPacket*>;
+    framegenerator<AVFrame*, AVFrame*> av_to_av_encoder() {
+        using data_packet = std::tuple<AVFrame*, AVFrame*>;
         auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
-
-        size_t poster_index = poster_ts_*fps_/profile_.fps_ratio();
-
-        if(poster_index < f_reader->get_frames_to_extract())
-            poster_index_ = poster_index;
 
         AVPacket* pkt = av_packet_alloc();
         AVFrame* frame = av_frame_alloc();
-        AVPacket* encoded_pkt = av_packet_alloc();
 
         int video_stream_index = f_reader->get_video_frame_index();
         int audio_stream_index = f_reader->get_audio_frame_index();
 
-        if (!pkt || !frame || !encoded_pkt) {
+        if (!pkt || !frame) {
             throw std::runtime_error("Failed to allocate packet or frame");
         }
 
-        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0 || f_reader->can_extract_frames(compressor->get_local_ticks_until_next_frame())) {
+        while (av_read_frame(f_reader->get_format_context(), pkt) >= 0) {
             AVFrame* v_frame = nullptr;
             AVFrame* a_frame = nullptr;
-            AVPacket* e_pkt = nullptr;
 
             if (pkt->stream_index == video_stream_index) {
                 f_reader->decode_video(frame, pkt, v_frame);
@@ -444,12 +447,13 @@ class flimencoder
 
             av_packet_unref(pkt);
 
+            // Compress decoded frames
             size_t local_ticks = compressor->get_local_ticks_until_next_frame();
             while(f_reader->can_extract_frames(local_ticks)) {
                 image* img = f_reader->extract_video_frame();
                 std::vector<sound_frame_t> sound_frames;
 
-                if(!poster_image_ && f_reader->get_extracted_frames() >= poster_index)
+                if(!poster_image_ && f_reader->get_extracted_frames() >= poster_index_)
                     make_posters(*img);
 
                 // Populate `sound_frames` vector
@@ -469,24 +473,42 @@ class flimencoder
             // -- Check into compressor buffers:
             //
 
-            if (v_frame || a_frame || e_pkt) {
-                co_yield data_packet{v_frame, a_frame, e_pkt};
+            // Write compressed frames
+            while(poster_image_ && !compressor->frame_buffer_empty()) {
+                flimcompressor::frame* encoded_frame = compressor->extract_frame();
+                write_frame(*encoded_frame);
+                delete encoded_frame;
+            }
+
+            if (v_frame || a_frame) {
+                co_yield data_packet{v_frame, a_frame};
             }
 
         }
 
         av_packet_free(&pkt);
         av_frame_free(&frame);
-        av_packet_free(&encoded_pkt);
     }
 
-    void encode_av_to_av() {
+    void encode_av_to_av(const std::string &flim_pathname) {
         auto encoder = av_to_av_encoder();
+        auto* f_reader = dynamic_cast<ffmpeg_reader*>(reader);
 
         time_t last_log_update = time(nullptr);
 
+        size_t poster_index = poster_ts_*fps_/profile_.fps_ratio();
+
+        if(poster_index < f_reader->get_frames_to_extract())
+            poster_index_ = poster_index;
+
+        // toc for video write
+        std::vector<uint8_t> toc;
+        out_toc_ = new std::back_insert_iterator<std::vector<uint8_t>>(std::back_inserter( toc ));
+
+        out_ = std::ofstream(flim_pathname.c_str(), std::ios::binary);
+
         while(encoder.next()) {
-            auto [v_frame, a_frame, encoded] = encoder.get_value();
+            auto [v_frame, a_frame] = encoder.get_value();
 
             time_t current_time = time(nullptr);
 
@@ -500,9 +522,9 @@ class flimencoder
                 av_frame_free(&v_frame);
             if(a_frame)
                 av_frame_free(&a_frame);
-            if(encoded)
-                av_packet_free(&encoded);
         }
+        //encoder.destroy();
+        out_.close();
     }
 
     void log_progress() {
@@ -520,7 +542,9 @@ public:
 
         delete poster_image_;
         delete poster_small_;
-        delete poster_small_bw_;
+        poster_small_bw_ = nullptr;
+
+        delete out_toc_;
     }
 
     void set_fps( double fps ) { fps_ = fps; }
@@ -554,7 +578,7 @@ public:
                                      profile_.error_bleed(),
                                      profile_.error_bidi());
 
-        encode_av_to_av();
+        encode_av_to_av(flim_pathname);
 
 /*
 
