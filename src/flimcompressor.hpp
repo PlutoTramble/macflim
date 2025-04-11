@@ -316,6 +316,8 @@ public:
 
         size_t get_num_compressed_frames() const {return in_fr_;}
 
+        size_t get_ticks_qty() const {return current_tick_;}
+
         std::vector<frame>* process_image(const image &img_src, const std::vector<sound_frame_t> &snd_vector) {
             auto* frames = new std::vector<frame>();
 
@@ -353,7 +355,7 @@ public:
                 filePath << "/tmp/test/" << in_fr_ << ".pgm";
 
                  write_image( filePath.str().c_str(), fb.as_image() );
-                 //write_image( "/tmp/b.pgm", dest );
+                 //write_image( filePath.str().c_str(), dest );
 
                 //  Compute the video budget?
                 size_t video_budget = byterate_*local_ticks;
@@ -383,8 +385,6 @@ public:
 
             return frames;
         }
-
-        std::vector<frame> get_frames() const { return frames_; }
     };
 
 private:
@@ -516,6 +516,13 @@ public:
         return frames_.empty();
     }
 
+    size_t get_ticks_qty() const {
+        if(helper)
+            return helper->get_ticks_qty();
+        else
+            return 0;
+    }
+
     void compress(image& img, std::vector<sound_frame_t>& sound_frames) {
         if(!helper)
             return;
@@ -552,11 +559,10 @@ static bool generate_initial_frame = false;
         }
 
 
-#ifndef OLD_VERSION
     DitheringParameters dp { bars, filters, dither, error_algorithm, stability, error_bleed, error_bidi, watermark };
     Ditherer d{ previous, dp };
     SubtitleBurner sb{  subtitles_ };
-    // TODO : CompressorHelper will become a property of flimcompressor. Might have to delete the old version of the code?
+
     helper = new CompressorHelper(d, sb, codecs, fps_, byterate, group );
     }
 

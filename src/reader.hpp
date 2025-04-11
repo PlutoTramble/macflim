@@ -178,7 +178,6 @@ class sound_buffer {
     float max_sample_;
 
     size_t sound_frame_size() {
-        // TODO : To confirm. Good chance that isn't right.
         return static_cast<size_t>(std::round(sample_rate_ / 60.0));
     }
 
@@ -212,38 +211,39 @@ public:
     }
 
     sound_frame_t& extract_front() {
-        // TODO : Test it
         size_t samples_needed = sound_frame_size();
 
-        if (data_.size() < samples_needed) {
-            return *(new sound_frame_t());
+        auto* s_frame = new sound_frame_t();
+
+        if (data_.empty()) {
+            return *s_frame;
         }
 
+        size_t available_samples = std::min(samples_needed, data_.size());
+
         // Normalization
-        min_sample_ = *std::min_element(data_.begin(), data_.begin() + samples_needed);
-        max_sample_ = *std::max_element(data_.begin(), data_.begin() + samples_needed);
+        min_sample_ = *std::min_element(data_.begin(), data_.begin() + available_samples);
+        max_sample_ = *std::max_element(data_.begin(), data_.begin() + available_samples);
 
         if (min_sample_ == max_sample_) {
             min_sample_ -= 1.0f;
             max_sample_ += 1.0f;
         }
 
-        sound_frame_t* s_frame = new sound_frame_t();
-
         for (int i = 0; i != sound_frame_t::size; i++) {
             float alpha = static_cast<float>(i) / sound_frame_t::size;
             size_t sample_index = static_cast<size_t>(alpha * samples_needed);
 
-            if (sample_index >= samples_needed)
-                sample_index = samples_needed - 1;
-
-            float sample = data_[sample_index];
-            uint8_t encoded = static_cast<uint8_t>(std::clamp((sample - min_sample_) / (max_sample_ - min_sample_) * 255.0f, 0.0f, 255.0f));
-            s_frame->at(i) = encoded;
+            if (sample_index < available_samples) {
+                float sample = data_[sample_index];
+                uint8_t encoded = static_cast<uint8_t>(std::clamp((sample - min_sample_) / (max_sample_ - min_sample_) * 255.0f,0.0f, 255.0f));
+                s_frame->at(i) = encoded;
+            } else {
+                s_frame->at(i) = 128; // silence for missing samples
+            }
         }
 
-        data_.erase(data_.begin(), data_.begin() + samples_needed);
-
+        data_.erase(data_.begin(), data_.begin() + available_samples);
         return *s_frame;
     }
 };
